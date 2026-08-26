@@ -1,0 +1,466 @@
+% !TEX program = xelatex
+\documentclass[UTF8,a4paper,11pt,fontset=windows]{ctexart}
+\usepackage[margin=1.72cm,headheight=22pt,footskip=0.85cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,tabularx,longtable,array}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{tikz}
+\usepackage[most]{tcolorbox}
+\usepackage{listings}
+\usetikzlibrary{arrows.meta,positioning,fit,calc,shapes.geometric,backgrounds,decorations.pathreplacing}
+\definecolor{ink}{HTML}{172033}
+\definecolor{navy}{HTML}{0F3B5A}
+\definecolor{blue}{HTML}{1677B9}
+\definecolor{teal}{HTML}{008C95}
+\definecolor{green}{HTML}{2E8B57}
+\definecolor{orange}{HTML}{DB7B20}
+\definecolor{red}{HTML}{B43C3C}
+\definecolor{violet}{HTML}{6D5AA8}
+\definecolor{lightblue}{HTML}{EAF4FA}
+\definecolor{lightteal}{HTML}{E9F6F5}
+\definecolor{lightorange}{HTML}{FFF2E4}
+\definecolor{lightred}{HTML}{FBECEC}
+\definecolor{grayline}{HTML}{CBD5E1}
+\hypersetup{colorlinks=true,linkcolor=navy,urlcolor=blue,citecolor=navy,pdftitle={PMSM FOC 控制软件架构设计},pdfauthor={Codex}}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\renewcommand{\arraystretch}{1.28}
+\setlist[itemize]{leftmargin=2em,itemsep=0.20em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}{>{\centering\arraybackslash}p{0.16\textwidth}}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small\color{navy}PMSM FOC 控制软件架构设计}
+\rhead{\small\color{navy}版本 1.0}
+\cfoot{\small\color{gray}\thepage}
+\renewcommand{\headrulewidth}{0.45pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{blue}\leaders\hrule height \headrulewidth\hfill}}
+\tikzset{
+>={Latex[length=2.2mm]},
+box/.style={draw=#1,fill=#1!9,rounded corners=2pt,minimum height=8mm,align=center,font=\small,inner sep=4pt},
+box/.default=navy,
+smbox/.style={draw=#1,fill=#1!8,rounded corners=2pt,minimum height=6.2mm,align=center,font=\scriptsize,inner sep=3pt},
+smbox/.default=navy,
+flow/.style={->,thick,draw=#1},
+flow/.default=navy,
+event/.style={->,thick,dashed,draw=orange},
+group/.style={draw=#1!75,rounded corners=3pt,dashed,inner sep=6pt},
+state/.style={draw=#1,fill=#1!10,rounded corners=8pt,minimum width=25mm,minimum height=9mm,align=center,font=\small},
+state/.default=navy
+}
+\newtcolorbox{keybox}[1]{colback=lightblue,colframe=blue,boxrule=0.5pt,arc=1.5pt,
+left=7pt,right=7pt,top=5pt,bottom=5pt,title={#1},fonttitle=\bfseries\color{ink}}
+\newtcolorbox{warnbox}[1]{colback=lightorange,colframe=orange,boxrule=0.5pt,arc=1.5pt,
+left=7pt,right=7pt,top=5pt,bottom=5pt,title={#1},fonttitle=\bfseries\color{ink}}
+\lstdefinestyle{code}{basicstyle=\ttfamily\footnotesize,columns=fullflexible,frame=single,
+rulecolor=\color{grayline},backgroundcolor=\color{black!2},xleftmargin=1em,xrightmargin=1em,
+aboveskip=0.6em,belowskip=0.5em,showstringspaces=false,breaklines=true}
+\begin{document}
+\begin{titlepage}
+\thispagestyle{empty}
+\begin{tikzpicture}[remember picture,overlay]
+\fill[navy] (current page.north west) rectangle ([yshift=-6.0cm]current page.north east);
+\fill[teal] ([yshift=-5.63cm]current page.north west) rectangle ([yshift=-6.0cm]current page.north east);
+\fill[lightblue] ([xshift=10.4cm,yshift=-16.8cm]current page.north west) circle (5.4cm);
+\fill[lightteal] ([xshift=15.1cm,yshift=-19.1cm]current page.north west) circle (3.8cm);
+\draw[blue,line width=1.3pt] ([xshift=2.0cm,yshift=-18.4cm]current page.north west) -- ([xshift=16.8cm,yshift=-18.4cm]current page.north west);
+\end{tikzpicture}
+\vspace*{1.25cm}
+{\color{white}\Large\bfseries 三相 PMSM 矢量控制软件设计}\\[0.35cm]
+{\color{white}\fontsize{26}{31}\selectfont\bfseries PMSM FOC 控制软件架构设计}\\[0.25cm]
+{\color{white!85}\large 从 Simulink/Stateflow 模型到 MCU 实时部署}\\[2.35cm]
+\begin{tcolorbox}[colback=white,colframe=grayline,boxrule=0.5pt,arc=2pt,left=10pt,right=10pt,top=9pt,bottom=9pt,width=0.88\textwidth]
+\textbf{适用范围}\quad 三相 PMSM；中心对齐 SVPWM；两电阻电流采样；编码器与反电动势无传感器 FOC；S32K144 或同类 MCU；FreeRTOS 用于后台服务。
+\end{tcolorbox}
+\vfill
+\begin{tabular}{@{}ll@{}}
+\textcolor{navy}{\bfseries 文档版本} & 1.0 \\
+\textcolor{navy}{\bfseries 日期} & 2026-08-26 \\
+\textcolor{navy}{\bfseries 设计基线} & 20 kHz PWM，10 kHz 快速电流环，1 kHz 速度环 \\
+\textcolor{navy}{\bfseries 参考} & NXP AN12235 的控制周期、采样同步、状态机和 MCAT 思路 \\
+\end{tabular}
+\vspace*{1.35cm}
+\end{titlepage}
+\begingroup
+\setlength{\parskip}{0pt}
+\small
+\tableofcontents
+\endgroup
+\clearpage
+\section{目标、边界与设计原则}
+\subsection{目标}
+本架构的目标是把 PMSM FOC 从可验证的模型逐级落实为可部署的嵌入式软件。它覆盖电流采样、坐标变换、电流/速度闭环、编码器和无传感器位置反馈、弱磁、状态机、保护、参数管理、通信诊断及测试接口。设计应满足\textbf{确定性、可观测、可标定、故障可控、可回归验证}五项要求。
+\begin{keybox}{核心分工}
+\textbf{Simulink}负责连续/离散数值算法：PMSM 对象、Clarke/Park、PI、SVPWM、观测器、滤波与限幅。\quad
+\textbf{Stateflow}负责离散事件与运行模式：初始化、校准、对齐、启动、闭环切换、停机和故障锁存。\quad
+\textbf{MCU 中断}承载硬实时控制，\textbf{FreeRTOS 任务}承载通信、记录、参数存储和非实时诊断。
+\end{keybox}
+\subsection{设计边界与基线假设}
+\begin{table}[h]
+\centering
+\caption{本设计的可落地基线}
+\begin{tabularx}{\textwidth}{p{0.26\textwidth}Y}
+\toprule
+项目 & 约束或假设 \\
+\midrule
+功率级 & 三相两电平逆变器，中心对齐 PWM，互补驱动与硬件死区 \\
+采样 & 两个同步 ADC 测量两相电流，第三相按 $I_a+I_b+I_c=0$ 重构；采样点位于有效低桥导通窗口 \\
+时间基准 & PWM 20 kHz；快速 FOC 每两个 PWM 周期执行一次，即 $T_{fast}=100\,\mu s$；速度环每 10 次快速环执行一次，即 $T_{speed}=1\,\mathrm{ms}$ \\
+位置源 & 第一阶段使用编码器；无传感器模式采用 BEMF 观测器与角度跟踪观测器 \\
+运行域 & 基速内 $I_d^*\approx0$；基速以上进入受限弱磁；所有电流/电压请求均经过限幅 \\
+安全域 & 过流、母线过压/欠压、驱动器故障、ADC/PDB 时序故障、观测器失锁和启动超时进入 FAULT \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\subsection{不可妥协的设计规则}
+\begin{enumerate}
+\item 快速电流环只在 ADC 完成中断中执行；不调用阻塞 API、不打印日志、不动态分配内存。
+\item 先以编码器或开环角度验证 FOC，后切入无传感器；不能同时调电流环、速度环和观测器。
+\item 所有 PI 都有输入/输出限制与抗积分饱和；所有参数有单位、量纲、版本和生效状态。
+\item 状态机拥有 PWM 使能权；算法模块只能输出电压请求，不能绕过安全状态直接驱动功率级。
+\item 模型、生成代码和实机使用同一份参数定义和同一套回归用例。
+\end{enumerate}
+\section{总体软件架构}
+\subsection{分层架构}
+图\ref{fig:architecture}从下到上给出控制软件的部署边界。底层是功率硬件和 MCU 外设；中间是硬实时信号链；上层是控制算法和状态管理；最上层是后台服务与标定。高频路径必须短、无阻塞并可测量执行时间。
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=4.5mm and 7mm]
+\node[box=red,minimum width=16.4cm,text width=15.2cm] (hw) {功率与传感硬件\quad PMSM;|;三相逆变器;|;电流采样;|;母线电压;|;编码器;|;驱动器故障脚};
+\node[box=orange,minimum width=16.4cm,text width=15.2cm,above=of hw] (per) {MCU 外设与硬件同步\quad PWM/FTM $\rightarrow$ TRGMUX/PDB $\rightarrow$ ADC $\rightarrow$ ADC-EOS ISR};
+\node[box=teal,minimum width=16.4cm,text width=15.2cm,above=of per] (rt) {硬实时控制服务\quad 采样标定与重构;|;快速 FOC;|;速度慢环;|;保护判定;|;PWM 更新};
+\node[box=blue,minimum width=16.4cm,text width=15.2cm,above=of rt] (ctrl) {控制算法与状态管理\quad 电流环;|;速度环;|;弱磁;|;BEMF/PLL;|;Stateflow 运行状态机};
+\node[box=violet,minimum width=16.4cm,text width=15.2cm,above=of ctrl] (svc) {后台服务\quad FreeMASTER/UART;|;参数管理;|;数据记录;|;故障日志;|;FreeRTOS 任务};
+\draw[flow=navy] (hw) -- (per);
+\draw[flow=navy] (per) -- (rt);
+\draw[flow=navy] (rt) -- (ctrl);
+\draw[flow=navy] (ctrl) -- (svc);
+\draw[event] (svc.east) to[out=0,in=0,looseness=0.75] node[right,font=\scriptsize,align=left] {启动/速度给定/\\参数更新请求} (ctrl.east);
+\draw[event] (hw.west) to[out=180,in=180,looseness=0.65] node[left,font=\scriptsize,align=right] {硬件故障\\直接关断} (rt.west);
+\end{tikzpicture}
+}
+\caption{FOC 控制软件分层架构}\label{fig:architecture}
+\end{figure}
+\subsection{模型到实机的映射}
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=5mm and 7mm]
+\node[box=violet,minimum width=31mm] (model) {Simulink/Stateflow 模型};
+\node[box=blue,minimum width=31mm,right=of model] (mil) {MIL\\模型级验证};
+\node[box=teal,minimum width=31mm,right=of mil] (code) {Embedded Coder\\生成代码};
+\node[box=orange,minimum width=31mm,right=of code] (sil) {SIL/PIL\\代码级验证};
+\node[box=green,minimum width=31mm,right=of sil] (target) {MCU/HIL/实机验证};
+\foreach \a/\b in {model/mil,mil/code,code/sil,sil/target} \draw[flow=navy] (\a) -- (\b);
+\end{tikzpicture}
+}
+\end{center}
+\section{控制数据流与实时调度}
+\subsection{快速控制环数据流}
+快速环负责把电流测量转换成下一控制周期的三相占空比。其输入、输出和时序必须固定。控制流程如下：
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=4mm and 4mm]
+\node[smbox=orange] (adc) {ADC-EOS ISR};
+\node[smbox=teal,right=of adc] (meas) {标幺化/偏置补偿/电流重构};
+\node[smbox=blue,right=of meas] (clarke) {Clarke/Park};
+\node[smbox=blue,right=of clarke] (pi) {$I_d/I_q$ PI + 解耦};
+\node[smbox=teal,right=of pi] (limit) {电压矢量限幅 + 抗饱和};
+\node[smbox=blue,right=of limit] (svm) {反 Park + SVPWM};
+\node[smbox=orange,right=of svm] (pwm) {写入缓冲 PWM 占空比};
+\foreach \a/\b in {adc/meas,meas/clarke,clarke/pi,pi/limit,limit/svm,svm/pwm} \draw[flow=navy] (\a) -- (\b);
+\end{tikzpicture}
+}
+\end{center}
+典型 d/q 模型为：
+\begin{align*}
+u_d &= R_s i_d + L_d \frac{di_d}{dt} - \omega_e L_q i_q,\\
+u_q &= R_s i_q + L_q \frac{di_q}{dt} + \omega_e(L_d i_d+\psi_{PM}).
+\end{align*}
+解耦补偿后，d、q 两轴可近似按 $1/(Ls+R_s)$ 设计独立 PI。快速环输出在电压圆内饱和：
+\[
+\sqrt{u_d^2+u_q^2}\le U_{max}(U_{dc},m_{max}).
+\]
+\subsection{多速率执行时序}
+图\ref{fig:timeline}给出推荐时间线。硬件触发完成采样，CPU 在 ADC 完成后才计算。PWM 缓冲更新在下一个同步点生效，因此模型中必须显式包含一拍计算/更新延迟。
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[x=1.18cm,y=0.75cm]
+\foreach \x/\n in {0/0,1/100,2/200,3/300,4/400,5/500,6/600,7/700,8/800,9/900,10/1000} {
+\draw[grayline] (\x,0) -- (\x,-4.2);
+\node[font=\scriptsize,below] at (\x,-4.2) {\n};
+}
+\node[anchor=east,font=\small\bfseries] at (-0.2,-0.45) {PWM};
+\foreach \x in {0,...,9} \draw[navy,thick] (\x,-0.45) -- (\x+0.5,-0.12) -- (\x+1,-0.45);
+\node[anchor=east,font=\small\bfseries] at (-0.2,-1.4) {ADC 采样};
+\foreach \x in {0,2,4,6,8} \fill[orange] (\x+0.5,-1.4) circle (2.1pt);
+\node[anchor=east,font=\small\bfseries] at (-0.2,-2.35) {快速环};
+\foreach \x in {0,2,4,6,8} \fill[teal] (\x+0.56,-2.62) rectangle (\x+1.52,-2.08);
+\node[anchor=east,font=\small\bfseries] at (-0.2,-3.3) {速度环};
+\fill[blue] (0.56,-3.57) rectangle (1.52,-3.03);
+\node[font=\scriptsize,align=left] at (5,-3.3) {单位：$\mu\mathrm{s}$；\quad 快速环 $100\,\mu\mathrm{s}$；\quad 速度环 $1\,\mathrm{ms}$};
+\draw[<->,orange,thick] (0.5,-1.82) -- node[below,font=\scriptsize] {采样到控制计算} (1.52,-1.82);
+\end{tikzpicture}
+\caption{20 kHz PWM 下的多速率调度示例}\label{fig:timeline}
+\end{figure}
+\begin{warnbox}{双电阻采样的实现约束}
+电流不是任意时刻都可测。控制器必须保证所选两相的低桥导通时间大于\emph{死区 + 功率器件开关过渡 + 运放建立 + ADC 采样/转换}的总时间。接近 100% 占空比时须实施最小导通时间/调制度限制；否则重构电流会失真，观测器和 PI 调参都会被误导。
+\end{warnbox}
+\section{状态机与安全架构}
+\subsection{Stateflow 顶层状态机}
+状态机是系统运行权限的唯一来源。它负责 PWM 使能、对齐阶段、位置源切换、故障锁存和复位条件；FOC 算法只在 RUN 状态接收有效的参考和位置反馈。
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[node distance=12mm and 17mm]
+\node[state=navy] (init) {INIT\\参数和变量初始化};
+\node[state=teal,right=of init] (ready) {READY\\等待启动命令};
+\node[state=orange,right=of ready] (calib) {CALIB\\ADC 偏置校准};
+\node[state=orange,below=of calib] (align) {ALIGN\\转子磁链对齐};
+\node[state=green,left=of align] (run) {RUN\\FOC 与慢环运行};
+\node[state=red,below=of ready] (fault) {FAULT\\PWM 关闭并锁存};
+\draw[flow=navy] (init) -- node[above,font=\scriptsize] {\texttt{init\_done}} (ready);
+\draw[flow=navy] (ready) -- node[above,font=\scriptsize] {\texttt{app\_on}} (calib);
+\draw[flow=navy] (calib) -- node[right,font=\scriptsize] {\texttt{calib\_done}} (align);
+\draw[flow=navy] (align) -- node[below,font=\scriptsize] {\texttt{align\_done}} (run);
+\draw[flow=navy] (run.west) to[out=180,in=-90] node[left,font=\scriptsize,align=right] {\texttt{app\_off}} (init.south);
+\draw[flow=orange] (fault) -- node[above,font=\scriptsize] {\texttt{fault\_clear \&\& safe}} (init);
+\foreach \n in {ready,calib,align,run} {\draw[event] (\n) -- (fault);}
+\draw[event] (init) to[out=-90,in=180] (fault);
+\end{tikzpicture}
+\caption{建议复现的 Stateflow 顶层状态机}\label{fig:stateflow}
+\end{figure}
+\begin{longtable}{p{0.15\textwidth}p{0.24\textwidth}p{0.28\textwidth}p{0.23\textwidth}}
+\caption{状态机的可执行定义}\label{tab:states}\\
+\toprule 状态 & entry 动作 & during 动作 & 转移条件 \\
+\midrule
+\endfirsthead
+\toprule 状态 & entry 动作 & during 动作 & 转移条件 \\
+\midrule
+\endhead
+INIT & 清空 PI/观测器/限幅器；加载参数；PWM 保持关闭 & 自检硬件和参数范围 & 自检成功 $\rightarrow$ READY；任一永久故障 $\rightarrow$ FAULT \\
+READY & 速度给定清零；禁止功率输出 & 采集母线、检查故障、等待命令 & \texttt{app\_on} 且安全 $\rightarrow$ CALIB \\
+CALIB & 输出 50\% 安全占空比或按硬件策略禁止桥臂；复位均值 & 对电流 ADC 多点平均并写入 offset & 样本足够 $\rightarrow$ ALIGN；超时/故障 $\rightarrow$ FAULT \\
+ALIGN & 启动计数器；给定 d 轴对齐电压 & 保持固定电角度，等待转子稳定 & 对齐完成 $\rightarrow$ RUN；停止 $\rightarrow$ INIT \\
+RUN & 使能 PWM；选择 Force 初始模式 & 快速 FOC；每 1 ms 速度环；Force $\rightarrow$ Tracking $\rightarrow$ Sensorless & 停止 $\rightarrow$ INIT；任一故障 $\rightarrow$ FAULT \\
+FAULT & 立即关闭 PWM；冻结故障快照；清空积分器 & 持续检查实际故障源 & 用户确认且物理故障消失 $\rightarrow$ INIT \\
+\bottomrule
+\end{longtable}
+\subsection{RUN 子状态与无传感器切换}
+\begin{center}
+\begin{tikzpicture}[node distance=8mm and 12mm]
+\node[state=orange] (force) {FORCE\\开环角度/速度};
+\node[state=teal,right=of force] (track) {TRACKING\\FOC 用开环角度\\观测器独立跟踪};
+\node[state=green,right=of track] (sensorless) {SENSORLESS\\FOC 用估计角度};
+\node[state=blue,below=of track] (encoder) {ENCODER\\FOC 用编码器角度};
+\draw[flow=navy] (force) -- node[above,font=\tiny] {BEMF 有效} (track);
+\draw[flow=navy] (track) -- node[above,font=\tiny] {$|\theta_{err}|$ 合格} (sensorless);
+\draw[flow=navy] (encoder) -- node[right,font=\tiny,align=left] {调试基准} (track);
+\draw[event] (sensorless) to[out=-45,in=-45] node[below,font=\tiny,yshift=-2mm] {失锁/低速回退} (force);
+\end{tikzpicture}
+\end{center}
+\section{模块设计与接口契约}
+\subsection{功能模块分解}
+\begin{longtable}{p{0.19\textwidth}p{0.27\textwidth}p{0.26\textwidth}p{0.20\textwidth}}
+\caption{模块职责与接口}\label{tab:modules}\\
+\toprule 模块 & 输入 & 输出 & 必须保证的性质 \\
+\midrule
+\endfirsthead
+\toprule 模块 & 输入 & 输出 & 必须保证的性质 \\
+\midrule
+\endhead
+Measurement & ADC 原始码、校准偏置、比例系数、采样有效标志 & $I_a,I_b,I_c,U_{dc}$，质量标志 & 单位统一；越界检测；采样无效时禁止更新控制器 \\
+Position Feedback & 编码器计数或 $u_{\alpha\beta},i_{\alpha\beta}$ & $\theta_e,\omega_e$，锁定标志 & 角度环绕一致；方向正确；失锁可判定 \\
+Fast FOC & 电流反馈、$I_d^*,I_q^*$、角度、速度、$U_{dc}$ & $d_a,d_b,d_c$，饱和标志 & 固定运行时间；无阻塞；PI 抗饱和 \\
+Speed/FW Loop & 速度给定、速度反馈、限流/限压状态 & $I_q^*,I_d^*$ & 速度斜坡；电流圆限制；基速以上弱磁 \\
+Protection & 测量值、驱动器故障、中断时序错误、算法健康度 & warning、fault、\texttt{fault\_code} & 硬件关断优先；软件锁存；可追溯快照 \\
+State Manager & 用户命令、保护结果、计数器、观测器状态 & \texttt{app\_state}、\texttt{PWM\_enable}、模式选择 & 只允许合法状态迁移；故障不自动重启 \\
+Parameter Service & 默认参数、通信写入、NVM 记录、版本信息 & 生效参数集、CRC、dirty 标志 & 原子切换；运行时写入受白名单约束 \\
+Diagnostics & 记录触发、变量采样、故障快照 & FreeMASTER/UART 数据、日志 & 降级优先；不得破坏快速环时序 \\
+\bottomrule
+\end{longtable}
+\subsection{关键数据对象}
+在 Simulink 中使用 Bus Object，在 C 中使用结构体，避免散落的全局变量。建议数据对象如下：
+\begin{lstlisting}[style=code]
+Measurement_t  { ia, ib, ic, udc, idc, valid, timestamp }
+Position_t     { theta_el, omega_el, source, locked, theta_error }
+Reference_t    { speed_cmd, id_cmd, iq_cmd, torque_limit }
+Control_t      { id, iq, ud, uq, duty_a, duty_b, duty_c, saturated }
+Fault_t        { warning_bits, latched_bits, first_fault, snapshot_id }
+Parameter_t    { motor, scale, current_pi, speed_pi, observer, limits }
+\end{lstlisting}
+接口的典型调用顺序为：\texttt{Measurement\_Update()} $\rightarrow$ \texttt{Protection\_FastCheck()} $\rightarrow$ \texttt{StateManager\_Tick()} $\rightarrow$ \texttt{FocFastLoop()} $\rightarrow$ \texttt{Pwm\_Commit()}。若 \texttt{fault\_latched} 为真，\texttt{Pwm\_Commit()} 只能写入安全占空比或关闭输出。
+\section{参数识别、PI 与观测器调参}
+\subsection{参数链路}
+电机参数不是文档填写项，而是控制模型的来源。所有识别值应附带温度、测试方法、日期、样机编号和可信等级。图\ref{fig:tuning}给出从测量到无传感器闭环的严格依赖顺序。
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[node distance=5mm and 7mm]
+\node[box=orange,minimum width=29mm] (scale) {硬件标定\\ADC 偏置/增益\\$U_{dc}$ 比例};
+\node[box=teal,minimum width=29mm,right=of scale] (motor) {电机辨识\\$p,R_s,L_d,L_q,\psi_{PM}$\\$J,B$};
+\node[box=blue,minimum width=29mm,right=of motor] (current) {电流环\\$K_{pd},K_{id}$\\$K_{pq},K_{iq}$};
+\node[box=violet,minimum width=29mm,right=of current] (speed) {速度/弱磁\\速度 PI、斜坡\\限流/限压};
+\node[box=green,minimum width=29mm,right=of speed] (obs) {观测器\\BEMF、PLL\\启动与切换};
+\foreach \a/\b in {scale/motor,motor/current,current/speed,speed/obs} \draw[flow=navy] (\a) -- (\b);
+\draw[event] (obs.south) to[out=-90,in=-90,looseness=0.8] node[below,font=\scriptsize] {编码器对比与实机波形反馈} (current.south);
+\end{tikzpicture}
+\caption{参数与调参的依赖顺序}\label{fig:tuning}
+\end{figure}
+\subsection{参数清单与作用}
+\begin{table}[htbp]
+\centering
+\caption{MCAT/控制配置中应维护的核心参数}
+\begin{tabularx}{\textwidth}{p{0.20\textwidth}p{0.26\textwidth}Y}
+\toprule
+类别 & 参数 & 对控制的作用 \\
+\midrule
+电机 & 极对数 $p$、$R_s$、$L_d$、$L_q$、$\psi_{PM}/K_e$ & 决定电角度换算、dq 模型、解耦、PI、BEMF 估算和弱磁边界 \\
+机械 & $J$、$B$、额定/最高速度、负载特性 & 决定速度 PI 带宽、斜坡、加减速能力和过冲 \\
+硬件标定 & 分流电阻、运放增益、ADC 参考、电压分压、PWM/死区、采样延时 & 决定安培/伏特/占空比量纲，错误会使一切算法失真 \\
+电流环 & $\omega_{ci}$、$\xi_i$、PI 限幅、抗饱和系数、解耦使能 & 决定电流响应、阻尼、可用电压和高速耦合抑制 \\
+速度环 & $\omega_{cs}$、$\xi_s$、速度滤波、斜坡、$I_q$ 限制 & 决定机械响应、转矩限制及速度纹波抑制 \\
+观测器 & BEMF 模型参数、观测器 PI、Tracking/PLL PI、滤波、锁定阈值 & 决定估算角度/速度稳定性和带载抗失步能力 \\
+启动与安全 & 对齐电压/时间、开环初速/加速度、切换阈值、故障阈值/延时 & 决定启动成功率、冲击转矩和故障覆盖范围 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\subsection{PI 整定原理}
+解耦后的电流对象为 $G(s)=1/(Ls+R_s)$。采用极点配置，使闭环接近期望二阶特征式 $s^2+2\xi\omega_0s+\omega_0^2$，可得到：
+\[
+K_p=2\xi\omega_0L-R_s,\qquad K_i=\omega_0^2L.
+\]
+分别用 $L_d$ 与 $L_q$ 计算 d/q 轴参数。工程实现中必须核查 PI 为连续还是离散实现：若积分器实现为 $x_I[k]=x_I[k-1]+K_iT_s e[k]$，则不可再次在配置值中重复乘 $T_s$。
+速度环以 $I_q^*$ 为输出，电流环足够快时可近似：
+\[
+J\frac{d\omega_m}{dt}=K_t I_q-T_L-B\omega_m.
+\]
+因此速度环带宽要显著低于电流环。建议从低带宽、低 $I_q$ 限值和慢斜坡开始；确认负载阶跃无振荡后再提高速度响应。
+\subsection{可执行调参步骤}
+\begin{enumerate}
+\item \textbf{先校准测量链路：}零电流偏置、三相电流方向、比例系数、PWM/ADC 采样窗口和母线电压缩放。
+\item \textbf{录入并核验电机参数：}优先实测 $R_s,L_d,L_q,\psi_{PM}$；记录测试温度。用编码器验证极对数和电角度方向。
+\item \textbf{只启用电流环：}使用 ENCODER 或 FORCE 角度，先做 $I_d$ 阶跃、再做 $I_q$ 阶跃；记录上升时间、超调、电压饱和和 d/q 串扰。
+\item \textbf{启用速度环：}从小 PI、慢斜坡、低电流限制开始，测试速度阶跃、负载阶跃、正反转和减速。
+\item \textbf{以编码器为真值调观测器：}记录 $\theta_{enc}-\theta_{obs}$ 和 $\omega_{enc}-\omega_{obs}$；先中速稳态，后加减速和负载突变。
+\item \textbf{调启动切换：}依次调对齐电压/时间、开环加速度、Tracking 时长、BEMF 幅值和相位误差阈值；先空载，再逐步增负载。
+\item \textbf{最后启用弱磁：}限制负 $I_d$、电流圆和电压圆，验证减速再生时的母线过压处理。
+\end{enumerate}
+\section{Simulink/Stateflow 建模规则}
+\subsection{推荐模型层级}
+\begin{center}
+\begin{tikzpicture}[node distance=5mm and 6mm]
+\node[box=navy,minimum width=34mm] (top) {\texttt{PMSM\_FOC\_Top}\\顶层接口与测试工况};
+\node[box=teal,minimum width=34mm,below left=of top] (plant) {\texttt{Motor\_Plant}\\逆变器/电机/负载};
+\node[box=blue,minimum width=34mm,below=of top] (foc) {\texttt{FOC\_Control}\\快环/慢环/观测器};
+\node[box=orange,minimum width=34mm,below right=of top] (sf) {\texttt{App\_Stateflow}\\运行状态和故障};
+\node[box=violet,minimum width=34mm,below=of foc] (io) {\texttt{IO\_Abstraction}\\ADC/PWM/Encoder/诊断};
+\draw[flow=navy] (plant) -- (foc);
+\draw[flow=navy] (foc) -- (plant);
+\draw[flow=navy] (sf) -- (foc);
+\draw[event] (io) -- (sf);
+\draw[flow=navy] (foc) -- (io);
+\end{tikzpicture}
+\end{center}
+具体规则如下：
+\begin{itemize}
+\item FOC、滤波、观测器和限幅放在 Simulink 子系统中；INIT/READY/CALIB/ALIGN/RUN/FAULT 放在 Stateflow 中。
+\item 所有控制子系统明确指定采样时间：$T_{fast}=100\,\mu\mathrm{s}$、$T_{speed}=1\,\mathrm{ms}$；不同速率跨域通过 Rate Transition 或等价机制传递。
+\item 使用 Data Dictionary 管理电机、标定、限值、PI、观测器和测试工况参数；禁止将标定常数硬编码在图块中。
+\item 信号必须定义单位与范围，例如角度用 rad 或标幺角度必须统一，速度区分机械/电角速度，电流和电压区分物理量/标幺值。
+\item 生成代码前把控制器离散化，固定步长仿真；浮点/定点策略需与目标 MCU 一致。
+\end{itemize}
+\section{FreeRTOS 与 MCU 的部署边界}
+\begin{table}[htbp]
+\centering
+\caption{中断与任务的职责分配}
+\begin{tabularx}{\textwidth}{p{0.23\textwidth}p{0.20\textwidth}Y}
+\toprule
+执行上下文 & 周期/触发 & 允许执行的内容 \\
+\midrule
+PWM/ADC 硬件链路 & PWM 周期内硬件触发 & PWM 同步、PDB/ADC 触发、结果锁存；无需 CPU 参与采样定时 \\
+ADC-EOS ISR & 每 $100\,\mu\mathrm{s}$ & 测量处理、快速保护、Stateflow 快速 tick、FOC 快环、PWM 缓冲提交、GPIO 测量执行时间 \\
+1 ms 慢环 & ISR 内计数到期或高优先级定时中断 & 速度 PI、速度滤波/斜坡、弱磁、位置源切换判定 \\
+FreeRTOS 通信任务 & 5--20 ms 或事件驱动 & FreeMASTER/UART 协议、读取监控变量、排队参数更新；绝不直接篡改快速环状态 \\
+FreeRTOS 记录任务 & 10--100 ms & 故障日志落盘、NVM 参数存储、统计、用户界面 \\
+低优先级诊断任务 & 后台 & 温度处理、非关键健康统计、测试命令分发 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+参数更新采用\textbf{请求--校验--安全点切换}机制：通信任务写入 shadow 参数并计算 CRC；状态机只在 READY 或限定的低风险运行点确认；快速环在一个原子边界复制有效参数版本。禁止通信任务直接写 PI 积分器、PWM 寄存器或故障锁存位。
+\section{实施计划与验收标准}
+\subsection{递进实施路线}
+\begin{longtable}{p{0.10\textwidth}p{0.29\textwidth}p{0.33\textwidth}p{0.19\textwidth}}
+\caption{从模型到实机的实施里程碑}\label{tab:milestone}\\
+\toprule 阶段 & 实施内容 & 必做验证 & 可交付物 \\
+\midrule
+\endfirsthead
+\toprule 阶段 & 实施内容 & 必做验证 & 可交付物 \\
+\midrule
+\endhead
+M0 & 参数、单位、故障和接口定义 & 评审参数量纲、最大值、相序和安全策略 & 数据字典、接口表 \\
+M1 & RL/机械对象与离散 PI & 阶跃响应符合预期；PI 限幅生效 & 基础 Simulink 模型 \\
+M2 & PMSM dq 对象和平均值逆变器 & $I_q$ 产生转矩；反电动势随速度变化 & \texttt{Motor\_Plant} 模型 \\
+M3 & Clarke/Park/SVPWM/快环 & d/q 阶跃、调制度边界、一个控制周期延迟 & \texttt{FOC\_FastLoop} 模型 \\
+M4 & 采样误差、死区、双电阻重构 & 窗口变窄时可检测并降级；电流和为零 & Measurement 模型 \\
+M5 & 编码器 FOC 和速度环 & 启停、速度阶跃、负载阶跃、正反转 & 传感器闭环模型 \\
+M6 & Stateflow 顶层状态机 & 故障从任意状态锁存；超时进入安全状态 & 状态机与测试 harness \\
+M7 & BEMF/Tracking 观测器 & 与编码器角度/速度对比；加减速不发散 & 无传感器子系统 \\
+M8 & Force/Tracking/Sensorless 切换 & 空载到额定负载启动；切换无大电流冲击 & 启动策略参数集 \\
+M9 & SIL/PIL 与实时任务集成 & 数值一致性、ISR WCET、竞态审查 & 目标代码与报告 \\
+M10 & 低压实机、再到目标电压 & 保护矩阵、温度/电压/负载覆盖 & 标定文件、测试报告 \\
+\bottomrule
+\end{longtable}
+\subsection{验收测试矩阵}
+\begin{table}[htbp]
+\centering
+\caption{最小验收集}
+\begin{tabularx}{\textwidth}{p{0.26\textwidth}Y Y}
+\toprule
+测试场景 & 观测量 & 通过准则 \\
+\midrule
+零电流校准 & ADC offset、三相和、母线电压 & offset 收敛；静止电流无明显偏差；缩放量纲正确 \\
+电流阶跃 & $I_d/I_q$、$u_d/u_q$、saturation & 快速稳定、无持续振荡、抗饱和有效、d/q 串扰可接受 \\
+速度阶跃/负载阶跃 & 速度、$I_q^*$、限流状态 & 无持续振荡；电流不越界；恢复时间满足指标 \\
+启动与反转 & 状态、角度、BEMF、三相电流 & ALIGN/Force/Tracking/Sensorless 合法切换，无异常冲击 \\
+故障注入 & PWM enable、fault code、故障快照 & 关断路径可验证；故障锁存；清除前不可重启 \\
+弱磁/再生 & $I_d$、电压圆、母线电压 & 不越过电流/电压/退磁边界；母线过压处理正确 \\
+代码实时性 & ISR 执行时间、栈、水位、任务延迟 & 最坏时间低于控制周期并保留裕量；无竞态/阻塞 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\section{风险清单与调试策略}
+\begin{table}[htbp]
+\centering
+\caption{高频问题的定位顺序}
+\begin{tabularx}{\textwidth}{p{0.24\textwidth}Y Y}
+\toprule
+现象 & 首先检查 & 不应采取的做法 \\
+\midrule
+电流环振荡 & 采样延迟、$L_d/L_q$、PI 带宽、ADC 质量、死区 & 直接同时降低所有 PI 参数 \\
+电机抖动或反转 & 相序、电流正方向、Park 符号、编码器零位、极对数 & 先调观测器增益 \\
+低速无传感器失锁 & $R_s$、偏置、死区补偿、BEMF 信噪比、启动斜坡 & 盲目提高 PLL PI \\
+负载后失步 & 观测器带宽、角度误差、切换阈值、$L_d/L_q$ 参数 & 只提高开环切换速度 \\
+减速母线过压 & 再生能量路径、制动策略、减速度、弱磁限制 & 仅提高软件过压阈值 \\
+MCAT 修改无效 & 参数版本、单位/标幺、更新时机、初始化覆盖 & 在 RUN 中直接修改全部结构体 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\begin{keybox}{建议的最小闭环开发顺序}
+\textbf{硬件标定} $\rightarrow$ \textbf{编码器电流 FOC} $\rightarrow$ \textbf{编码器速度 FOC} $\rightarrow$ \textbf{Stateflow 状态机} $\rightarrow$ \textbf{编码器对比观测器} $\rightarrow$ \textbf{无传感器切换} $\rightarrow$ \textbf{弱磁与完整保护}。\par
+每进入下一阶段，都应把当前模型、参数集、波形基准和自动测试用例冻结为一个可回归版本。
+\end{keybox}
+\clearpage
+\section{结语}
+该架构的关键不在于把 FOC 算法拼接成一个模型，而在于把\textbf{实时采样、可验证控制链、状态权限、安全关断和参数版本}组织成一套可重复交付的系统。先保证传感器 FOC 正确，再以编码器为真值验证观测器，最后进入无传感器和弱磁，可以显著降低调试的不确定性。
+\vspace{1em}
+\noindent\textcolor{navy}{\bfseries 参考基线：}NXP AN12235《3-Phase Sensorless PMSM Motor Control Kit with S32K144》，用于控制周期、两电阻采样同步、状态机、BEMF 观测器和 MCAT 参数分类的工程参考。
+\vspace{1em}
+\begin{keybox}{建议的下一步}
+\textbf{第 1 步：}建立 M0 参数字典与硬件标定台架，先确认采样窗口、相序和零偏。\quad
+\textbf{第 2 步：}完成 M1--M5 的编码器 FOC 闭环，并冻结可回归的参数集和波形基准。\quad
+\textbf{第 3 步：}在编码器真值对比通过后实施 M6--M10：状态机、观测器、无传感器切换、弱磁与故障验证。
+\end{keybox}
+\end{document}
