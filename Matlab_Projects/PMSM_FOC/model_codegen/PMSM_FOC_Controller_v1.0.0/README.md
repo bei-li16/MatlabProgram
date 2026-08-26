@@ -13,7 +13,7 @@
 
 ## 模型用途和边界
 
-本模型实现 PMSM 矢量控制器的软件部分，用于生成可集成到 MCU/ECU 工程中的 C 代码。控制功能包括：
+本版本包同时归档基础闭环仿真模型和可部署控制器模型，避免后续新模型与本版本文件混放。控制器用于生成可集成到 MCU/ECU 工程中的 C 代码，主要功能包括：
 
 - Clarke 变换和 Park 变换；
 - 速度 PI 环；
@@ -23,27 +23,37 @@
 - 逆 Park 变换；
 - 居中式 SVPWM 三相占空比计算。
 
-该代码生成模型不包含 PMSM 电机、三相逆变器、机械负载和传感器等被控对象。仿真被控对象位于上一级目录的 `PMSM_FOC_Basic_v2.slx`，不应部署到目标控制器。
+`PMSM_FOC_Basic_v2.slx` 包含用于闭环验证的平均值逆变器和离散 PMSM 被控对象；`PMSM_FOC_Controller_Codegen_v2.slx` 只包含需要部署的软件控制器。电机、逆变器、机械负载和仿真信号源不应部署到目标控制器。
 
 ## 文件结构
 
 ```text
 PMSM_FOC_Controller_v1.0.0/
 ├─ README.md
+├─ PMSM_FOC_Basic_v2.slx
+├─ PMSM_FOC_Basic_v2_results.png
+├─ build_basic_pmsm_foc.m
+├─ foc_controller_sfun.m
+├─ average_inverter_sfun.m
+├─ pmsm_plant_sfun.m
 ├─ PMSM_FOC_Controller_Codegen_v2.slx
 ├─ build_pmsm_foc_controller_codegen.m
 ├─ foc_controller_codegen_core.m
 ├─ verify_pmsm_foc_controller_sil.m
-└─ PMSM_FOC_Controller_Codegen_v2_ert_rtw/
-   ├─ PMSM_FOC_Controller_Codegen_v2.c
-   ├─ PMSM_FOC_Controller_Codegen_v2.h
-   ├─ PMSM_FOC_Controller_Codegen_v2_private.h
-   ├─ PMSM_FOC_Controller_Codegen_v2_types.h
-   ├─ rtwtypes.h
-   └─ ert_main.c
+├─ PMSM_FOC_Controller_Codegen_v2_ert_rtw/
+│  ├─ PMSM_FOC_Controller_Codegen_v2.c
+│  ├─ PMSM_FOC_Controller_Codegen_v2.h
+│  ├─ PMSM_FOC_Controller_Codegen_v2_private.h
+│  ├─ PMSM_FOC_Controller_Codegen_v2_types.h
+│  ├─ rtwtypes.h
+│  └─ ert_main.c
+└─ intermediate/                         # 可删除、不会提交到 Git
+   └─ PMSM_FOC_Controller_Codegen_v2_sbs.mexw64
 ```
 
 其中 `ert_main.c` 是主机独立运行示例。集成到实际 MCU 时，通常使用硬件工程自己的启动代码和定时中断，不直接使用该文件。
+
+`intermediate` 中的 SIL MEX 文件当前可能被 MATLAB 会话占用。关闭模型或执行 `clear mex` 后可以删除；它受 `.gitignore` 保护，不属于版本交付物。
 
 ## 任务周期
 
@@ -158,6 +168,12 @@ build_pmsm_foc_controller_codegen
 ```
 
 脚本会重新创建控制器模型，并使用 `ert.tlc` 生成和编译代码。重新构建会再次产生 `.slxc`、`slprj`、对象文件和编译元数据，这些均属于可再生成的中间产物。
+
+重新创建和运行基础闭环仿真模型：
+
+```matlab
+build_basic_pmsm_foc
+```
 
 ## 验证结果
 
