@@ -1,0 +1,9 @@
+#G:\Data\GitFiles\MatlabProgram\Matlab_Projects\Simulink_learn\Simulink_CodeGen\sim1\sim1_autosar_rtw\stub\Rte_sim1.h
+#this file contains the list of RTE methods that the profiling must filter out
+-Rte_IRead_sim1_Step_In1_In1
+-Rte_IWrite_sim1_Step_Out1_Out1
+-Rte_IWriteRef_sim1_Step_Out1_Out1
+-Rte_IRead_sim1_Step_In2_In2
+-Rte_IRead_sim1_Step_In3_In3
+-Rte_IWrite_sim1_Step_zout_zout
+-Rte_IWriteRef_sim1_Step_zout_zout

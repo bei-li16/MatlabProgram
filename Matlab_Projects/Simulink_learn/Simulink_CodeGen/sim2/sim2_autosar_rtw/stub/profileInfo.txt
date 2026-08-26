@@ -1,0 +1,4 @@
+#G:\Data\GitFiles\MatlabProgram\Matlab_Projects\Simulink_learn\Simulink_CodeGen\sim2\sim2_autosar_rtw\stub\Rte_sim2.h
+#this file contains the list of RTE methods that the profiling must filter out
+-Rte_IRead_sim2_Step_shift_sw_shift_sw
+-Rte_IRead_sim2_Step_speed_speed
