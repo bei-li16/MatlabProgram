@@ -1,4 +1,30 @@
+## MATLAB editor backups
 *.asv
 *.autosave
-**/slprj
 *.original
+
+## Simulink caches, coverage output, and generated work directories
+**/slprj/
+*.slxc
+**/slcov_output/
+
+## Simulink/Embedded Coder build intermediates
+## Keep generated source and interface artifacts such as .c, .h, and .arxml.
+**/*_rtw/*.obj
+**/*_rtw/*.o
+**/*_rtw/*.rsp
+**/*_rtw/*.tmw
+**/*_rtw/*.dmr
+**/*_rtw/*.bat
+**/*_rtw/*.mk
+**/*_rtw/buildInfo.mat
+**/*_rtw/codeInfo.mat
+**/*_rtw/compileInfo.mat
+**/*_rtw/rtwtypeschksum.mat
+**/*_rtw/tmwinternal/
+**/*_rtw/html/
+
+## Locally compiled binaries
+*.exe
+*.mexw*
+*.pdb
