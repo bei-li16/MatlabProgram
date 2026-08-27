@@ -7,26 +7,30 @@ Native choice present: 1
 MathWorks reference: mcbhdlplantlib/PMSM HDL
 MathWorks reference verified: 1
 Callback button present: 1
-One-click switch link present: 1
+One-click switch control present: 1
 FOC component count: 10
 Controller components present: 1
 Harness components present: 1
-Controller boundary connections (in/out): 6/8
-Harness boundary connections (in/out): 6/4
+Controller rate transition present: 1
+Harness rate transition present: 1
+Speed task sample time s: 0.001
+Current task sample time s: 0.0001
+Controller dangling line count: 0
+Harness dangling line count: 0
 Component architecture verification pass: 1
-Native final speed rpm: 993.090393
-Native maximum speed rpm: 1084.07068
-Native maximum abs Iq A: 2.13765693
-Native duty minimum: 0.0852309167
-Native duty maximum: 0.914757848
-Native final torque Nm: 0.204401806
+Native final speed rpm: 992.876831
+Native maximum speed rpm: 1084.82007
+Native maximum abs Iq A: 2.14349937
+Native duty minimum: 0.0849412978
+Native duty maximum: 0.915064812
+Native final torque Nm: 0.204457477
 Native simulation pass: 1
-MathWorks MCB PMSM HDL final speed rpm: 993.090332
-MathWorks MCB PMSM HDL maximum speed rpm: 1084.07068
-MathWorks MCB PMSM HDL maximum abs Iq A: 2.13765669
-MathWorks MCB PMSM HDL duty minimum: 0.0852309167
-MathWorks MCB PMSM HDL duty maximum: 0.914757967
-MathWorks MCB PMSM HDL final torque Nm: 0.204401821
+MathWorks MCB PMSM HDL final speed rpm: 992.87677
+MathWorks MCB PMSM HDL maximum speed rpm: 1084.82007
+MathWorks MCB PMSM HDL maximum abs Iq A: 2.14349937
+MathWorks MCB PMSM HDL duty minimum: 0.0849412978
+MathWorks MCB PMSM HDL duty maximum: 0.915064812
+MathWorks MCB PMSM HDL final torque Nm: 0.204457372
 MathWorks MCB PMSM HDL simulation pass: 1
 ERT step present: 1
 ERT initialize present: 1

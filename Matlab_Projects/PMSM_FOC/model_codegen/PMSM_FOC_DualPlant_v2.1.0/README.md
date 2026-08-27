@@ -7,7 +7,7 @@
 - `PMSM_FOC_DualPlant_ClosedLoop_v21.slx`：闭环仿真顶层模型。
 - `PMSM_FOC_DualPlant_Controller_v21.slx`：可独立生成 ERT C 代码的控制器模型。
 - `build_pmsm_foc_dualplant_v21.m`：配置模型、依次仿真两个电机对象、绘图、导出架构图、生成代码并写入验收报告。
-- `refactor_pmsm_foc_controller_v21.m`：在两个 v2.1.0 模型中重建组件化 FOC 控制器，并在重构前后保护上层端口连线。
+- `refactor_pmsm_foc_controller_v21.m`：清空旧顶层连线，并按经典级联 FOC 拓扑重建两个 v2.1.0 模型。
 - `switch_pmsm_plant_v21.m`：停止仿真时切换 Variant 选择。
 - `verification_report.txt`：最近一次自动验收数据。
 - `PMSM_FOC_DualPlant_v21_results.png`：关键曲线对比。
@@ -17,15 +17,16 @@
 闭环信号链如下：
 
 ```text
-1000 rpm 速度阶跃 ─┐
-电机速度/电流/角度 ─┼─> FOC Controller ─> Duty A/B/C ─> 48 V 平均逆变器
-48 V 直流母线 ──────┘                                      │
-                                                            v
-                              Selectable_PMSM_Plant (Variant Subsystem)
-                              ├─ Native_Discrete_PMSM
-0.2 N·m 负载阶跃 ────────────>└─ MathWorks_MCB_PMSM_HDL
-                                                            │
-                         SpeedRpm, ThetaElectrical, Ia/Ib, TorqueNm, Id/Iq
+速度给定 -> Speed PI (1 ms) -> Rate Transition -> Iq PI ─┐
+Id*=0 --------------------------------------------> Id PI ├-> DQ 电压合成
+                                                        │
+PMSM Ia/Ib -> Clarke -> Park -> Id/Iq ------------------┘
+                              │
+PMSM 转速 --------------------┴-> DQ 解耦前馈 ----------┘
+
+DQ 电压 -> 逆 Park -> 逆 Clarke -> SVPWM -> 平均逆变器 -> PMSM
+             ^                                          │
+             └---------------- 电角度 -------------------┘
 ```
 
 顶层 Simulink 架构：
@@ -38,13 +39,13 @@
 
 ### FOC 控制组件及责任边界
 
-控制器不再把所有计算平铺在同一个子系统中，而是拆分为 10 个可独立打开、检查和维护的组件。顶层只表达组件间的数据流；每个组件内部均包含职责、公式、采样周期、参数名和限幅说明，块的 `Description` 中也保留同样的参数摘要。
+控制器采用与经典级联 FOC 框图一致的顶层数据流：`Speed_PI_Controller_1ms` 形成速度外环，显式 `IqRef_Rate_Transition` 将 1 ms 的电流给定传递到 100 us 任务；Clarke、Park、D/Q 轴 PI、解耦前馈、DQ 电压合成、逆 Park、逆 Clarke 和 SVPWM 均直接显示为顶层独立组件。模型不再用一个 `Current_Control_100us` 大子系统遮蔽电流环结构，图中的前向控制链与电流/角度反馈链均可直接追踪。
 
 ![组件化 FOC 控制器架构](PMSM_FOC_DualPlant_v21_controller_architecture.png)
 
 | 组件 | 单一责任 | 主要接口 | 关键参数或约束 |
 | --- | --- | --- | --- |
-| `Speed_PI_Controller` | 将速度误差转换为 q 轴电流给定 | `SpeedReferenceRpm`, `SpeedRpm` → `IqReference` | 1 ms；`FOC_Native_KpSpeed`、`FOC_Native_KiSpeed`；±`FOC_Native_IqLimit` |
+| `Speed_PI_Controller_1ms` | 将速度误差转换为 q 轴电流给定，构成速度外环 | `SpeedReferenceRpm`, `SpeedRpm` → `IqReference` | 独立 1 ms 任务；`FOC_Native_KpSpeed`、`FOC_Native_KiSpeed`；±`FOC_Native_IqLimit` |
 | `Clarke_Transform` | 两相采样电流转换到静止 α/β 坐标系 | `Ia`, `Ib` → `Ialpha`, `Ibeta` | `Ialpha=Ia`；`Ibeta=(Ia+2Ib)/sqrt(3)` |
 | `Park_Transform` | α/β 电流转换到旋转 d/q 坐标系 | `Ialpha`, `Ibeta`, `ThetaElectrical` → `Id`, `Iq` | 正弦/余弦角度变换；100 us 数据通路 |
 | `D_Axis_Current_PI` | 将 d 轴电流调节到 0 A | `Reference=0`, `Id` → `VdPI` | 100 us；电流 PI 参数；积分器限幅 ±30 |
@@ -55,7 +56,7 @@
 | `Inverse_Clarke_Transform` | α/β 电压转换为三相电压 | `Valpha`, `Vbeta` → `Va`, `Vb`, `Vc` | `Va=Valpha`；B/C 相使用 ±`sqrt(3)/2` |
 | `SVPWM_Duty_Calculation` | 公共模注入、母线归一化和占空比限幅 | `Va`, `Vb`, `Vc`, `Vdc` → `DutyA/B/C` | `Voffset=-0.5(max+min)`；占空比 0.02～0.98 |
 
-组件边界保持为虚拟子系统，使 1 ms 速度环和 100 us 电流环继续沿用原有多速率调度；控制器外部 6 输入/8 输出接口保持不变。重构脚本会捕获并恢复上一级连线，同时修复历史重构可能留下的悬空线，避免组件化过程改变闭环行为。
+速度环与电流环不再混放在同一个顶层控制器块内：速度 PI 的状态更新周期为 1 ms；Clarke/Park、D/Q 电流 PI、解耦、逆变换和 SVPWM 属于 100 us 电流控制任务；中间的 Rate Transition 明确承担跨速率数据传递。控制器代码生成模型仍保持原有 6 输入/8 输出接口。重构脚本每次先删除旧顶层信号线，再按已知级联拓扑完整重连，并检查源端或目标端缺失的悬空线，因此不会保留图中曾出现的红色虚线分支。
 
 两个电机对象的公共接口为：
 
@@ -126,7 +127,7 @@ MathWorks 分支将 α/β 电压转换为三相电压后送入官方 `mcbhdlplan
 - `1`：`Native_Discrete_PMSM`
 - `2`：`MathWorks_MCB_PMSM_HDL`（默认）
 
-仿真停止时，可单击模型中的 `ONE-CLICK PMSM PLANT SWITCH` 超链接切换。旁边的 Dashboard Callback Button 调用同一脚本；R2024a 中 Dashboard 按钮需要先选中再激活，因此超链接是实际的一键路径。下一次开始仿真时编译所选分支。
+仿真停止时，可单击模型中的 Dashboard `Switch_PMSM_Plant` 按钮切换电机分支；按钮会调用 `switch_pmsm_plant_v21.m` 并显示新的活动对象。下一次开始仿真时编译所选分支。旧版富文本超链接已删除，因为 Simulink 导出 PNG 时会把其 HTML 原文铺在架构图上。
 
 ## 重建与复核
 

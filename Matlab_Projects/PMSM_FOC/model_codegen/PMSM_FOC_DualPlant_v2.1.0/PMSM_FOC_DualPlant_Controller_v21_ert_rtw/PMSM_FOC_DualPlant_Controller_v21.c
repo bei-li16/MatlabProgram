@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'PMSM_FOC_DualPlant_Controller_v21'.
  *
- * Model version                  : 1.11
+ * Model version                  : 1.17
  * Simulink Coder version         : 24.1 (R2024a) 19-Nov-2023
- * C/C++ source code generated on : Thu Aug 27 15:35:17 2026
+ * C/C++ source code generated on : Thu Aug 27 21:15:33 2026
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: Intel->x86-64 (Windows64)
@@ -21,70 +21,67 @@
 real32_T FOC_Native_CurrentIntegratorLimit = 30.0F;
                                   /* Variable: FOC_Native_CurrentIntegratorLimit
                                    * Referenced by:
-                                   *   '<S5>/Integrator_Limit'
-                                   *   '<S9>/Integrator_Limit'
+                                   *   '<S4>/Integrator_Limit'
+                                   *   '<S8>/Integrator_Limit'
                                    */
 real32_T FOC_Native_CurrentPeriod = 0.0001F;/* Variable: FOC_Native_CurrentPeriod
                                              * Referenced by:
-                                             *   '<S5>/KiTs'
-                                             *   '<S9>/KiTs'
+                                             *   '<S4>/KiTs'
+                                             *   '<S8>/KiTs'
                                              */
 real32_T FOC_Native_DutyMax = 0.98F;   /* Variable: FOC_Native_DutyMax
                                         * Referenced by:
-                                        *   '<S10>/Duty_A_Limit'
-                                        *   '<S10>/Duty_B_Limit'
-                                        *   '<S10>/Duty_C_Limit'
+                                        *   '<S9>/Duty_A_Limit'
+                                        *   '<S9>/Duty_B_Limit'
+                                        *   '<S9>/Duty_C_Limit'
                                         */
 real32_T FOC_Native_DutyMin = 0.02F;   /* Variable: FOC_Native_DutyMin
                                         * Referenced by:
-                                        *   '<S10>/Duty_A_Limit'
-                                        *   '<S10>/Duty_B_Limit'
-                                        *   '<S10>/Duty_C_Limit'
+                                        *   '<S9>/Duty_A_Limit'
+                                        *   '<S9>/Duty_B_Limit'
+                                        *   '<S9>/Duty_C_Limit'
                                         */
 real32_T FOC_Native_FluxPM = 0.05F;    /* Variable: FOC_Native_FluxPM
-                                        * Referenced by: '<S3>/Flux_PM'
+                                        * Referenced by: '<S2>/Flux_PM'
                                         */
 real32_T FOC_Native_IqLimit = 8.0F;    /* Variable: FOC_Native_IqLimit
                                         * Referenced by:
-                                        *   '<S11>/Integrator_Limit'
-                                        *   '<S11>/Iq_Reference_Limit'
+                                        *   '<S10>/Integrator_Limit'
+                                        *   '<S10>/Iq_Reference_Limit'
                                         */
 real32_T FOC_Native_KiCurrent = 500.0F;/* Variable: FOC_Native_KiCurrent
                                         * Referenced by:
-                                        *   '<S5>/KiTs'
-                                        *   '<S9>/KiTs'
+                                        *   '<S4>/KiTs'
+                                        *   '<S8>/KiTs'
                                         */
 real32_T FOC_Native_KiSpeed = 0.05F;   /* Variable: FOC_Native_KiSpeed
-                                        * Referenced by: '<S11>/KiTs'
+                                        * Referenced by: '<S10>/KiTs'
                                         */
 real32_T FOC_Native_KpCurrent = 1.0F;  /* Variable: FOC_Native_KpCurrent
                                         * Referenced by:
-                                        *   '<S5>/Kp'
-                                        *   '<S9>/Kp'
+                                        *   '<S4>/Kp'
+                                        *   '<S8>/Kp'
                                         */
 real32_T FOC_Native_KpSpeed = 0.02F;   /* Variable: FOC_Native_KpSpeed
-                                        * Referenced by: '<S11>/Kp'
+                                        * Referenced by: '<S10>/Kp'
                                         */
 real32_T FOC_Native_Ld = 0.001F;       /* Variable: FOC_Native_Ld
-                                        * Referenced by: '<S3>/Ld_x_Id'
+                                        * Referenced by: '<S2>/Ld_x_Id'
                                         */
 real32_T FOC_Native_Lq = 0.001F;       /* Variable: FOC_Native_Lq
-                                        * Referenced by: '<S3>/D_Decoupling'
+                                        * Referenced by: '<S2>/D_Decoupling'
                                         */
 real32_T FOC_Native_PolePairs = 4.0F;  /* Variable: FOC_Native_PolePairs
-                                        * Referenced by: '<S3>/Electrical_Speed'
+                                        * Referenced by: '<S2>/Electrical_Speed'
                                         */
 real32_T FOC_Native_SpeedPeriod = 0.001F;/* Variable: FOC_Native_SpeedPeriod
-                                          * Referenced by: '<S11>/KiTs'
+                                          * Referenced by: '<S10>/KiTs'
                                           */
 real32_T FOC_Native_VoltageLimit = 26.0F;/* Variable: FOC_Native_VoltageLimit
                                           * Referenced by:
-                                          *   '<S4>/Vd_Limit'
-                                          *   '<S4>/Vq_Limit'
+                                          *   '<S3>/Vd_Limit'
+                                          *   '<S3>/Vq_Limit'
                                           */
-
-/* Block signals (default storage) */
-B_PMSM_FOC_DualPlant_Controll_T PMSM_FOC_DualPlant_Controller_B;
 
 /* Block states (default storage) */
 DW_PMSM_FOC_DualPlant_Control_T PMSM_FOC_DualPlant_Controlle_DW;
@@ -122,31 +119,30 @@ static void rate_scheduler(void)
 void PMSM_FOC_DualPlant_Controller_v21_step(void)
 {
   real32_T rtb_Current_Error;
-  real32_T rtb_Current_Error_d;
-  real32_T rtb_Integrator_Add_g;
+  real32_T rtb_Current_Error_a;
+  real32_T rtb_Integrator_Add;
   real32_T rtb_Phase_Vb;
   real32_T rtb_Phase_Vc;
-  real32_T rtb_RpmToRad;
   real32_T rtb_Valpha_Sum;
 
-  /* Trigonometry: '<S7>/CosTheta' incorporates:
+  /* Trigonometry: '<S6>/CosTheta' incorporates:
    *  Inport: '<Root>/ElectricalAngleRad'
-   *  Trigonometry: '<S8>/CosTheta'
+   *  Trigonometry: '<S7>/CosTheta'
    */
   rtb_Phase_Vc = cosf(PMSM_FOC_DualPlant_Controller_U.ElectricalAngleRad);
 
-  /* Trigonometry: '<S8>/SinTheta' incorporates:
+  /* Trigonometry: '<S7>/SinTheta' incorporates:
    *  Inport: '<Root>/ElectricalAngleRad'
-   *  Trigonometry: '<S7>/SinTheta'
+   *  Trigonometry: '<S6>/SinTheta'
    */
-  rtb_Integrator_Add_g = sinf(PMSM_FOC_DualPlant_Controller_U.ElectricalAngleRad);
+  rtb_Integrator_Add = sinf(PMSM_FOC_DualPlant_Controller_U.ElectricalAngleRad);
 
-  /* Sum: '<S8>/Iq_Sum' incorporates:
-   *  Gain: '<S2>/Ib_x2'
-   *  Gain: '<S2>/InvSqrt3'
+  /* Sum: '<S7>/Iq_Sum' incorporates:
+   *  Gain: '<S1>/Ib_x2'
+   *  Gain: '<S1>/InvSqrt3'
    *  Inport: '<Root>/PhaseCurrentA'
    *  Inport: '<Root>/PhaseCurrentB'
-   *  Sum: '<S2>/Ia_Plus_2Ib'
+   *  Sum: '<S1>/Ia_Plus_2Ib'
    */
   PMSM_FOC_DualPlant_Controller_Y.IqMeasured =
     (PMSM_FOC_DualPlant_Controller_P.Ib_x2_Gain *
@@ -154,354 +150,383 @@ void PMSM_FOC_DualPlant_Controller_v21_step(void)
      PMSM_FOC_DualPlant_Controller_U.PhaseCurrentA) *
     PMSM_FOC_DualPlant_Controller_P.NATIVE_INV_SQRT3;
 
-  /* Sum: '<S8>/Id_Sum' incorporates:
+  /* Sum: '<S7>/Id_Sum' incorporates:
    *  Inport: '<Root>/PhaseCurrentA'
-   *  Product: '<S8>/Id_CosAlpha'
-   *  Product: '<S8>/Id_SinBeta'
-   *  Trigonometry: '<S8>/SinTheta'
+   *  Product: '<S7>/Id_CosAlpha'
+   *  Product: '<S7>/Id_SinBeta'
+   *  Trigonometry: '<S7>/SinTheta'
    */
   PMSM_FOC_DualPlant_Controller_Y.IdMeasured = rtb_Phase_Vc *
-    PMSM_FOC_DualPlant_Controller_U.PhaseCurrentA + rtb_Integrator_Add_g *
+    PMSM_FOC_DualPlant_Controller_U.PhaseCurrentA + rtb_Integrator_Add *
     PMSM_FOC_DualPlant_Controller_Y.IqMeasured;
 
-  /* Sum: '<S5>/Current_Error' incorporates:
-   *  Constant: '<S1>/Id_Reference_Zero'
+  /* Sum: '<S4>/Current_Error' incorporates:
+   *  Constant: '<Root>/Id_Reference_Zero'
+   *
+   * Block description for '<Root>/Id_Reference_Zero':
+   *  Field-oriented control d-axis current reference: Id*=0 A.
    */
   rtb_Current_Error = PMSM_FOC_DualPlant_Controller_P.Id_Reference_Zero_Value -
     PMSM_FOC_DualPlant_Controller_Y.IdMeasured;
 
-  /* Saturate: '<S4>/Vq_Limit' incorporates:
-   *  Gain: '<S3>/Electrical_Speed'
+  /* Saturate: '<S3>/Vq_Limit' incorporates:
+   *  Gain: '<S2>/Electrical_Speed'
    *  Inport: '<Root>/SpeedRpm'
    */
   PMSM_FOC_DualPlant_Controller_Y.VqCommand =
     PMSM_FOC_DualPlant_Controller_P.NATIVE_RPM_TO_RAD_S * FOC_Native_PolePairs *
     PMSM_FOC_DualPlant_Controller_U.SpeedRpm;
 
-  /* Sum: '<S8>/Iq_Sum' incorporates:
-   *  Gain: '<S8>/Negative'
+  /* Sum: '<S7>/Iq_Sum' incorporates:
+   *  Gain: '<S7>/Negative'
    *  Inport: '<Root>/PhaseCurrentA'
-   *  Product: '<S8>/Iq_CosBeta'
-   *  Product: '<S8>/Iq_SinAlpha'
-   *  Trigonometry: '<S8>/SinTheta'
+   *  Product: '<S7>/Iq_CosBeta'
+   *  Product: '<S7>/Iq_SinAlpha'
+   *  Trigonometry: '<S7>/SinTheta'
    */
-  PMSM_FOC_DualPlant_Controller_Y.IqMeasured = rtb_Integrator_Add_g *
+  PMSM_FOC_DualPlant_Controller_Y.IqMeasured = rtb_Integrator_Add *
     PMSM_FOC_DualPlant_Controller_U.PhaseCurrentA *
     PMSM_FOC_DualPlant_Controller_P.Negative_Gain + rtb_Phase_Vc *
     PMSM_FOC_DualPlant_Controller_Y.IqMeasured;
 
-  /* Saturate: '<S4>/Vd_Limit' incorporates:
-   *  Gain: '<S3>/D_Decoupling'
-   *  Gain: '<S5>/Kp'
-   *  Product: '<S3>/Omega_x_Iq'
-   *  Sum: '<S4>/Vd_Raw'
-   *  Sum: '<S5>/PI_Sum'
-   *  UnitDelay: '<S5>/Integrator_State'
+  /* Saturate: '<S3>/Vd_Limit' incorporates:
+   *  Gain: '<S2>/D_Decoupling'
+   *  Gain: '<S4>/Kp'
+   *  Product: '<S2>/Omega_x_Iq'
+   *  Sum: '<S3>/Vd_Raw'
+   *  Sum: '<S4>/PI_Sum'
+   *  UnitDelay: '<S4>/Integrator_State'
    */
   PMSM_FOC_DualPlant_Controller_Y.VdCommand = (FOC_Native_KpCurrent *
     rtb_Current_Error + PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE)
     + PMSM_FOC_DualPlant_Controller_Y.VqCommand *
     PMSM_FOC_DualPlant_Controller_Y.IqMeasured * -FOC_Native_Lq;
 
-  /* Saturate: '<S4>/Vd_Limit' */
+  /* Saturate: '<S3>/Vd_Limit' */
   if (PMSM_FOC_DualPlant_Controller_Y.VdCommand > FOC_Native_VoltageLimit) {
-    /* Saturate: '<S4>/Vd_Limit' */
+    /* Saturate: '<S3>/Vd_Limit' */
     PMSM_FOC_DualPlant_Controller_Y.VdCommand = FOC_Native_VoltageLimit;
   } else if (PMSM_FOC_DualPlant_Controller_Y.VdCommand <
              -FOC_Native_VoltageLimit) {
-    /* Saturate: '<S4>/Vd_Limit' */
+    /* Saturate: '<S3>/Vd_Limit' */
     PMSM_FOC_DualPlant_Controller_Y.VdCommand = -FOC_Native_VoltageLimit;
   }
 
-  /* End of Saturate: '<S4>/Vd_Limit' */
+  /* End of Saturate: '<S3>/Vd_Limit' */
 
-  /* ZeroOrderHold: '<S11>/SpeedRef_1ms' */
+  /* RateTransition: '<Root>/IqRef_Rate_Transition'
+   *
+   * Block description for '<Root>/IqRef_Rate_Transition':
+   *  Explicit deterministic transfer from 1 ms speed task to 100 us current
+   *  task.
+   */
   if (PMSM_FOC_DualPlant_Controlle_M->Timing.TaskCounters.TID[1] == 0) {
-    /* Gain: '<S11>/RpmToRad' incorporates:
-     *  Inport: '<Root>/SpeedReferenceRpm'
-     *  Inport: '<Root>/SpeedRpm'
-     *  Sum: '<S11>/Speed_Error'
-     */
-    rtb_RpmToRad = (PMSM_FOC_DualPlant_Controller_U.SpeedReferenceRpm -
-                    PMSM_FOC_DualPlant_Controller_U.SpeedRpm) *
-      PMSM_FOC_DualPlant_Controller_P.NATIVE_RPM_TO_RAD_S;
-
-    /* Sum: '<S11>/Iq_Reference_Sum' incorporates:
-     *  Gain: '<S11>/Kp'
-     *  UnitDelay: '<S11>/Integrator_State'
-     */
-    PMSM_FOC_DualPlant_Controller_B.Iq_Reference_Limit = FOC_Native_KpSpeed *
-      rtb_RpmToRad + PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_m;
-
-    /* Saturate: '<S11>/Iq_Reference_Limit' */
-    if (PMSM_FOC_DualPlant_Controller_B.Iq_Reference_Limit > FOC_Native_IqLimit)
-    {
-      /* Sum: '<S11>/Iq_Reference_Sum' incorporates:
-       *  Saturate: '<S11>/Iq_Reference_Limit'
-       */
-      PMSM_FOC_DualPlant_Controller_B.Iq_Reference_Limit = FOC_Native_IqLimit;
-    } else if (PMSM_FOC_DualPlant_Controller_B.Iq_Reference_Limit <
-               -FOC_Native_IqLimit) {
-      /* Sum: '<S11>/Iq_Reference_Sum' incorporates:
-       *  Saturate: '<S11>/Iq_Reference_Limit'
-       */
-      PMSM_FOC_DualPlant_Controller_B.Iq_Reference_Limit = -FOC_Native_IqLimit;
-    }
-
-    /* End of Saturate: '<S11>/Iq_Reference_Limit' */
+    /* Outport: '<Root>/IqReference' */
+    PMSM_FOC_DualPlant_Controller_Y.IqReference =
+      PMSM_FOC_DualPlant_Controlle_DW.IqRef_Rate_Transition_Buffer0;
   }
 
-  /* End of ZeroOrderHold: '<S11>/SpeedRef_1ms' */
+  /* End of RateTransition: '<Root>/IqRef_Rate_Transition' */
 
-  /* Sum: '<S9>/Current_Error' incorporates:
-   *  ZeroOrderHold: '<S11>/IqRef_100us'
+  /* Sum: '<S8>/Current_Error' incorporates:
+   *  Outport: '<Root>/IqReference'
    */
-  rtb_Current_Error_d = PMSM_FOC_DualPlant_Controller_B.Iq_Reference_Limit -
+  rtb_Current_Error_a = PMSM_FOC_DualPlant_Controller_Y.IqReference -
     PMSM_FOC_DualPlant_Controller_Y.IqMeasured;
 
-  /* Saturate: '<S4>/Vq_Limit' incorporates:
-   *  Constant: '<S3>/Flux_PM'
-   *  Gain: '<S3>/Ld_x_Id'
-   *  Gain: '<S9>/Kp'
-   *  Product: '<S3>/Q_Feedforward'
-   *  Sum: '<S3>/Flux_Linkage'
-   *  Sum: '<S4>/Vq_Raw'
-   *  Sum: '<S9>/PI_Sum'
-   *  UnitDelay: '<S9>/Integrator_State'
+  /* Saturate: '<S3>/Vq_Limit' incorporates:
+   *  Constant: '<S2>/Flux_PM'
+   *  Gain: '<S2>/Ld_x_Id'
+   *  Gain: '<S8>/Kp'
+   *  Product: '<S2>/Q_Feedforward'
+   *  Sum: '<S2>/Flux_Linkage'
+   *  Sum: '<S3>/Vq_Raw'
+   *  Sum: '<S8>/PI_Sum'
+   *  UnitDelay: '<S8>/Integrator_State'
    */
   PMSM_FOC_DualPlant_Controller_Y.VqCommand = (FOC_Native_Ld *
     PMSM_FOC_DualPlant_Controller_Y.IdMeasured + FOC_Native_FluxPM) *
     PMSM_FOC_DualPlant_Controller_Y.VqCommand + (FOC_Native_KpCurrent *
-    rtb_Current_Error_d +
-    PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_o);
+    rtb_Current_Error_a +
+    PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_d);
 
-  /* Saturate: '<S4>/Vq_Limit' */
+  /* Saturate: '<S3>/Vq_Limit' */
   if (PMSM_FOC_DualPlant_Controller_Y.VqCommand > FOC_Native_VoltageLimit) {
-    /* Saturate: '<S4>/Vq_Limit' */
+    /* Saturate: '<S3>/Vq_Limit' */
     PMSM_FOC_DualPlant_Controller_Y.VqCommand = FOC_Native_VoltageLimit;
   } else if (PMSM_FOC_DualPlant_Controller_Y.VqCommand <
              -FOC_Native_VoltageLimit) {
-    /* Saturate: '<S4>/Vq_Limit' */
+    /* Saturate: '<S3>/Vq_Limit' */
     PMSM_FOC_DualPlant_Controller_Y.VqCommand = -FOC_Native_VoltageLimit;
   }
 
-  /* End of Saturate: '<S4>/Vq_Limit' */
+  /* End of Saturate: '<S3>/Vq_Limit' */
 
-  /* Sum: '<S7>/Valpha_Sum' incorporates:
-   *  Product: '<S7>/Valpha_CosVd'
-   *  Product: '<S7>/Valpha_SinVq'
-   *  Trigonometry: '<S7>/CosTheta'
+  /* Sum: '<S6>/Valpha_Sum' incorporates:
+   *  Product: '<S6>/Valpha_CosVd'
+   *  Product: '<S6>/Valpha_SinVq'
+   *  Trigonometry: '<S6>/CosTheta'
    */
   rtb_Valpha_Sum = rtb_Phase_Vc * PMSM_FOC_DualPlant_Controller_Y.VdCommand -
-    rtb_Integrator_Add_g * PMSM_FOC_DualPlant_Controller_Y.VqCommand;
+    rtb_Integrator_Add * PMSM_FOC_DualPlant_Controller_Y.VqCommand;
 
-  /* Sum: '<S7>/Vbeta_Sum' incorporates:
-   *  Product: '<S7>/Vbeta_CosVq'
-   *  Product: '<S7>/Vbeta_SinVd'
-   *  Trigonometry: '<S7>/CosTheta'
+  /* Sum: '<S6>/Vbeta_Sum' incorporates:
+   *  Product: '<S6>/Vbeta_CosVq'
+   *  Product: '<S6>/Vbeta_SinVd'
+   *  Trigonometry: '<S6>/CosTheta'
    */
-  rtb_Phase_Vc = rtb_Integrator_Add_g *
-    PMSM_FOC_DualPlant_Controller_Y.VdCommand + rtb_Phase_Vc *
-    PMSM_FOC_DualPlant_Controller_Y.VqCommand;
+  rtb_Phase_Vc = rtb_Integrator_Add * PMSM_FOC_DualPlant_Controller_Y.VdCommand
+    + rtb_Phase_Vc * PMSM_FOC_DualPlant_Controller_Y.VqCommand;
 
-  /* Sum: '<S6>/Phase_Vb' incorporates:
-   *  Gain: '<S6>/Vb_Alpha'
-   *  Gain: '<S6>/Vb_Beta'
+  /* Sum: '<S5>/Phase_Vb' incorporates:
+   *  Gain: '<S5>/Vb_Alpha'
+   *  Gain: '<S5>/Vb_Beta'
    */
   rtb_Phase_Vb = PMSM_FOC_DualPlant_Controller_P.Vb_Alpha_Gain * rtb_Valpha_Sum
     + PMSM_FOC_DualPlant_Controller_P.NATIVE_SQRT3_BY2 * rtb_Phase_Vc;
 
-  /* Sum: '<S6>/Phase_Vc' incorporates:
-   *  Gain: '<S6>/Vc_Alpha'
-   *  Gain: '<S6>/Vc_Beta'
+  /* Sum: '<S5>/Phase_Vc' incorporates:
+   *  Gain: '<S5>/Vc_Alpha'
+   *  Gain: '<S5>/Vc_Beta'
    */
   rtb_Phase_Vc = PMSM_FOC_DualPlant_Controller_P.Vc_Alpha_Gain * rtb_Valpha_Sum
     + -PMSM_FOC_DualPlant_Controller_P.NATIVE_SQRT3_BY2 * rtb_Phase_Vc;
 
-  /* Gain: '<S10>/Common_Mode' incorporates:
-   *  MinMax: '<S10>/Phase_Maximum'
-   *  MinMax: '<S10>/Phase_Minimum'
-   *  Sum: '<S10>/Max_Plus_Min'
+  /* Gain: '<S9>/Common_Mode' incorporates:
+   *  MinMax: '<S9>/Phase_Maximum'
+   *  MinMax: '<S9>/Phase_Minimum'
+   *  Sum: '<S9>/Max_Plus_Min'
    */
-  rtb_Integrator_Add_g = (fmaxf(fmaxf(rtb_Valpha_Sum, rtb_Phase_Vb),
-    rtb_Phase_Vc) + fminf(fminf(rtb_Valpha_Sum, rtb_Phase_Vb), rtb_Phase_Vc)) *
-    PMSM_FOC_DualPlant_Controller_P.Common_Mode_Gain;
+  rtb_Integrator_Add = (fmaxf(fmaxf(rtb_Valpha_Sum, rtb_Phase_Vb), rtb_Phase_Vc)
+                        + fminf(fminf(rtb_Valpha_Sum, rtb_Phase_Vb),
+    rtb_Phase_Vc)) * PMSM_FOC_DualPlant_Controller_P.Common_Mode_Gain;
 
-  /* Sum: '<S10>/Duty_B_Plus_Half' incorporates:
-   *  Constant: '<S10>/Duty_Half'
+  /* Sum: '<S9>/Duty_B_Plus_Half' incorporates:
+   *  Constant: '<S9>/Duty_Half'
    *  Inport: '<Root>/DcBusVoltage'
-   *  Product: '<S10>/Duty_B_Divide_Vdc'
-   *  Sum: '<S10>/Phase_B_Plus_Common'
+   *  Product: '<S9>/Duty_B_Divide_Vdc'
+   *  Sum: '<S9>/Phase_B_Plus_Common'
    */
-  PMSM_FOC_DualPlant_Controller_Y.DutyB = (rtb_Phase_Vb + rtb_Integrator_Add_g) /
+  PMSM_FOC_DualPlant_Controller_Y.DutyB = (rtb_Phase_Vb + rtb_Integrator_Add) /
     PMSM_FOC_DualPlant_Controller_U.DcBusVoltage +
     PMSM_FOC_DualPlant_Controller_P.Duty_Half_Value;
 
-  /* Saturate: '<S10>/Duty_B_Limit' */
+  /* Saturate: '<S9>/Duty_B_Limit' */
   if (PMSM_FOC_DualPlant_Controller_Y.DutyB > FOC_Native_DutyMax) {
-    /* Sum: '<S10>/Duty_B_Plus_Half' incorporates:
+    /* Sum: '<S9>/Duty_B_Plus_Half' incorporates:
      *  Outport: '<Root>/DutyB'
      */
     PMSM_FOC_DualPlant_Controller_Y.DutyB = FOC_Native_DutyMax;
   } else if (PMSM_FOC_DualPlant_Controller_Y.DutyB < FOC_Native_DutyMin) {
-    /* Sum: '<S10>/Duty_B_Plus_Half' incorporates:
+    /* Sum: '<S9>/Duty_B_Plus_Half' incorporates:
      *  Outport: '<Root>/DutyB'
      */
     PMSM_FOC_DualPlant_Controller_Y.DutyB = FOC_Native_DutyMin;
   }
 
-  /* End of Saturate: '<S10>/Duty_B_Limit' */
+  /* End of Saturate: '<S9>/Duty_B_Limit' */
 
-  /* Sum: '<S10>/Duty_A_Plus_Half' incorporates:
-   *  Constant: '<S10>/Duty_Half'
+  /* Sum: '<S9>/Duty_A_Plus_Half' incorporates:
+   *  Constant: '<S9>/Duty_Half'
    *  Inport: '<Root>/DcBusVoltage'
-   *  Product: '<S10>/Duty_A_Divide_Vdc'
-   *  Sum: '<S10>/Phase_A_Plus_Common'
+   *  Product: '<S9>/Duty_A_Divide_Vdc'
+   *  Sum: '<S9>/Phase_A_Plus_Common'
    */
-  PMSM_FOC_DualPlant_Controller_Y.DutyA = (rtb_Valpha_Sum + rtb_Integrator_Add_g)
-    / PMSM_FOC_DualPlant_Controller_U.DcBusVoltage +
+  PMSM_FOC_DualPlant_Controller_Y.DutyA = (rtb_Valpha_Sum + rtb_Integrator_Add) /
+    PMSM_FOC_DualPlant_Controller_U.DcBusVoltage +
     PMSM_FOC_DualPlant_Controller_P.Duty_Half_Value;
 
-  /* Saturate: '<S10>/Duty_A_Limit' */
+  /* Saturate: '<S9>/Duty_A_Limit' */
   if (PMSM_FOC_DualPlant_Controller_Y.DutyA > FOC_Native_DutyMax) {
-    /* Sum: '<S10>/Duty_A_Plus_Half' incorporates:
+    /* Sum: '<S9>/Duty_A_Plus_Half' incorporates:
      *  Outport: '<Root>/DutyA'
      */
     PMSM_FOC_DualPlant_Controller_Y.DutyA = FOC_Native_DutyMax;
   } else if (PMSM_FOC_DualPlant_Controller_Y.DutyA < FOC_Native_DutyMin) {
-    /* Sum: '<S10>/Duty_A_Plus_Half' incorporates:
+    /* Sum: '<S9>/Duty_A_Plus_Half' incorporates:
      *  Outport: '<Root>/DutyA'
      */
     PMSM_FOC_DualPlant_Controller_Y.DutyA = FOC_Native_DutyMin;
   }
 
-  /* End of Saturate: '<S10>/Duty_A_Limit' */
+  /* End of Saturate: '<S9>/Duty_A_Limit' */
 
-  /* Sum: '<S10>/Duty_C_Plus_Half' incorporates:
-   *  Constant: '<S10>/Duty_Half'
+  /* Sum: '<S9>/Duty_C_Plus_Half' incorporates:
+   *  Constant: '<S9>/Duty_Half'
    *  Inport: '<Root>/DcBusVoltage'
-   *  Product: '<S10>/Duty_C_Divide_Vdc'
-   *  Sum: '<S10>/Phase_C_Plus_Common'
+   *  Product: '<S9>/Duty_C_Divide_Vdc'
+   *  Sum: '<S9>/Phase_C_Plus_Common'
    */
-  PMSM_FOC_DualPlant_Controller_Y.DutyC = (rtb_Phase_Vc + rtb_Integrator_Add_g) /
+  PMSM_FOC_DualPlant_Controller_Y.DutyC = (rtb_Phase_Vc + rtb_Integrator_Add) /
     PMSM_FOC_DualPlant_Controller_U.DcBusVoltage +
     PMSM_FOC_DualPlant_Controller_P.Duty_Half_Value;
 
-  /* Saturate: '<S10>/Duty_C_Limit' */
+  /* Saturate: '<S9>/Duty_C_Limit' */
   if (PMSM_FOC_DualPlant_Controller_Y.DutyC > FOC_Native_DutyMax) {
-    /* Sum: '<S10>/Duty_C_Plus_Half' incorporates:
+    /* Sum: '<S9>/Duty_C_Plus_Half' incorporates:
      *  Outport: '<Root>/DutyC'
      */
     PMSM_FOC_DualPlant_Controller_Y.DutyC = FOC_Native_DutyMax;
   } else if (PMSM_FOC_DualPlant_Controller_Y.DutyC < FOC_Native_DutyMin) {
-    /* Sum: '<S10>/Duty_C_Plus_Half' incorporates:
+    /* Sum: '<S9>/Duty_C_Plus_Half' incorporates:
      *  Outport: '<Root>/DutyC'
      */
     PMSM_FOC_DualPlant_Controller_Y.DutyC = FOC_Native_DutyMin;
   }
 
-  /* End of Saturate: '<S10>/Duty_C_Limit' */
+  /* End of Saturate: '<S9>/Duty_C_Limit' */
 
-  /* Gain: '<S9>/KiTs' incorporates:
-   *  Gain: '<S5>/KiTs'
+  /* Gain: '<S8>/KiTs' incorporates:
+   *  Gain: '<S4>/KiTs'
    */
   rtb_Valpha_Sum = FOC_Native_KiCurrent * FOC_Native_CurrentPeriod;
 
-  /* Sum: '<S9>/Integrator_Add' incorporates:
-   *  Gain: '<S9>/KiTs'
-   *  UnitDelay: '<S9>/Integrator_State'
+  /* Sum: '<S8>/Integrator_Add' incorporates:
+   *  Gain: '<S8>/KiTs'
+   *  UnitDelay: '<S8>/Integrator_State'
    */
-  PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_o += rtb_Valpha_Sum *
-    rtb_Current_Error_d;
+  PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_d += rtb_Valpha_Sum *
+    rtb_Current_Error_a;
 
-  /* Saturate: '<S9>/Integrator_Limit' */
-  if (PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_o >
+  /* Saturate: '<S8>/Integrator_Limit' */
+  if (PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_d >
       FOC_Native_CurrentIntegratorLimit) {
-    /* Sum: '<S9>/Integrator_Add' */
-    PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_o =
+    /* Sum: '<S8>/Integrator_Add' */
+    PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_d =
       FOC_Native_CurrentIntegratorLimit;
-  } else if (PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_o <
+  } else if (PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_d <
              -FOC_Native_CurrentIntegratorLimit) {
-    /* Sum: '<S9>/Integrator_Add' */
-    PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_o =
+    /* Sum: '<S8>/Integrator_Add' */
+    PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_d =
       -FOC_Native_CurrentIntegratorLimit;
   }
 
-  /* End of Saturate: '<S9>/Integrator_Limit' */
+  /* End of Saturate: '<S8>/Integrator_Limit' */
 
-  /* Outport: '<Root>/IqReference' incorporates:
-   *  ZeroOrderHold: '<S11>/IqRef_100us'
-   */
-  PMSM_FOC_DualPlant_Controller_Y.IqReference =
-    PMSM_FOC_DualPlant_Controller_B.Iq_Reference_Limit;
-  if (PMSM_FOC_DualPlant_Controlle_M->Timing.TaskCounters.TID[1] == 0) {
-    /* Sum: '<S11>/Integrator_Add' incorporates:
-     *  Gain: '<S11>/KiTs'
-     *  UnitDelay: '<S11>/Integrator_State'
-     */
-    PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_m +=
-      FOC_Native_KiSpeed * FOC_Native_SpeedPeriod * rtb_RpmToRad;
-
-    /* Saturate: '<S11>/Integrator_Limit' */
-    if (PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_m >
-        FOC_Native_IqLimit) {
-      /* Sum: '<S11>/Integrator_Add' */
-      PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_m =
-        FOC_Native_IqLimit;
-    } else if (PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_m <
-               -FOC_Native_IqLimit) {
-      /* Sum: '<S11>/Integrator_Add' */
-      PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_m =
-        -FOC_Native_IqLimit;
-    }
-
-    /* End of Saturate: '<S11>/Integrator_Limit' */
-  }
-
-  /* Sum: '<S5>/Integrator_Add' incorporates:
-   *  Gain: '<S5>/KiTs'
-   *  UnitDelay: '<S5>/Integrator_State'
+  /* Sum: '<S4>/Integrator_Add' incorporates:
+   *  Gain: '<S4>/KiTs'
+   *  UnitDelay: '<S4>/Integrator_State'
    */
   PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE += rtb_Valpha_Sum *
     rtb_Current_Error;
 
-  /* Saturate: '<S5>/Integrator_Limit' */
+  /* Saturate: '<S4>/Integrator_Limit' */
   if (PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE >
       FOC_Native_CurrentIntegratorLimit) {
-    /* Sum: '<S5>/Integrator_Add' */
+    /* Sum: '<S4>/Integrator_Add' */
     PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE =
       FOC_Native_CurrentIntegratorLimit;
   } else if (PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE <
              -FOC_Native_CurrentIntegratorLimit) {
-    /* Sum: '<S5>/Integrator_Add' */
+    /* Sum: '<S4>/Integrator_Add' */
     PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE =
       -FOC_Native_CurrentIntegratorLimit;
   }
 
-  /* End of Saturate: '<S5>/Integrator_Limit' */
+  /* End of Saturate: '<S4>/Integrator_Limit' */
+
+  /* Update for RateTransition: '<Root>/IqRef_Rate_Transition'
+   *
+   * Block description for '<Root>/IqRef_Rate_Transition':
+   *  Explicit deterministic transfer from 1 ms speed task to 100 us current
+   *  task.
+   */
+  if (PMSM_FOC_DualPlant_Controlle_M->Timing.TaskCounters.TID[1] == 0) {
+    /* UnitDelay: '<S10>/Integrator_State' */
+    rtb_Current_Error =
+      PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_f;
+
+    /* Gain: '<S10>/RpmToRad' incorporates:
+     *  Inport: '<Root>/SpeedReferenceRpm'
+     *  Inport: '<Root>/SpeedRpm'
+     *  Sum: '<S10>/Speed_Error'
+     */
+    rtb_Current_Error_a = (PMSM_FOC_DualPlant_Controller_U.SpeedReferenceRpm -
+      PMSM_FOC_DualPlant_Controller_U.SpeedRpm) *
+      PMSM_FOC_DualPlant_Controller_P.NATIVE_RPM_TO_RAD_S;
+
+    /* Sum: '<S10>/Integrator_Add' incorporates:
+     *  Gain: '<S10>/KiTs'
+     *  UnitDelay: '<S10>/Integrator_State'
+     */
+    PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_f +=
+      FOC_Native_KiSpeed * FOC_Native_SpeedPeriod * rtb_Current_Error_a;
+
+    /* Saturate: '<S10>/Integrator_Limit' */
+    if (PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_f >
+        FOC_Native_IqLimit) {
+      /* Sum: '<S10>/Integrator_Add' */
+      PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_f =
+        FOC_Native_IqLimit;
+    } else if (PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_f <
+               -FOC_Native_IqLimit) {
+      /* Sum: '<S10>/Integrator_Add' */
+      PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_f =
+        -FOC_Native_IqLimit;
+    }
+
+    /* End of Saturate: '<S10>/Integrator_Limit' */
+
+    /* Sum: '<S10>/Iq_Reference_Sum' incorporates:
+     *  Gain: '<S10>/Kp'
+     */
+    rtb_Current_Error += FOC_Native_KpSpeed * rtb_Current_Error_a;
+
+    /* Saturate: '<S10>/Iq_Reference_Limit' */
+    if (rtb_Current_Error > FOC_Native_IqLimit) {
+      rtb_Current_Error = FOC_Native_IqLimit;
+    } else if (rtb_Current_Error < -FOC_Native_IqLimit) {
+      rtb_Current_Error = -FOC_Native_IqLimit;
+    }
+
+    /* End of Saturate: '<S10>/Iq_Reference_Limit' */
+    PMSM_FOC_DualPlant_Controlle_DW.IqRef_Rate_Transition_Buffer0 =
+      rtb_Current_Error;
+  }
+
+  /* End of Update for RateTransition: '<Root>/IqRef_Rate_Transition' */
   rate_scheduler();
 }
 
 /* Model initialize function */
 void PMSM_FOC_DualPlant_Controller_v21_initialize(void)
 {
-  /* InitializeConditions for Sum: '<S5>/Integrator_Add' incorporates:
-   *  UnitDelay: '<S5>/Integrator_State'
+  /* Start for Outport: '<Root>/IqReference' incorporates:
+   *  RateTransition: '<Root>/IqRef_Rate_Transition'
+   *
+   * Block description for '<Root>/IqRef_Rate_Transition':
+   *  Explicit deterministic transfer from 1 ms speed task to 100 us current
+   *  task.
+   */
+  PMSM_FOC_DualPlant_Controller_Y.IqReference =
+    PMSM_FOC_DualPlant_Controller_P.IqRef_Rate_Transition_InitialCo;
+
+  /* InitializeConditions for Sum: '<S4>/Integrator_Add' incorporates:
+   *  UnitDelay: '<S4>/Integrator_State'
    */
   PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE =
     PMSM_FOC_DualPlant_Controller_P.Integrator_State_InitialConditi;
 
-  /* InitializeConditions for Sum: '<S11>/Integrator_Add' incorporates:
-   *  UnitDelay: '<S11>/Integrator_State'
+  /* InitializeConditions for RateTransition: '<Root>/IqRef_Rate_Transition'
+   *
+   * Block description for '<Root>/IqRef_Rate_Transition':
+   *  Explicit deterministic transfer from 1 ms speed task to 100 us current
+   *  task.
    */
-  PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_m =
-    PMSM_FOC_DualPlant_Controller_P.Integrator_State_InitialCondi_g;
+  PMSM_FOC_DualPlant_Controlle_DW.IqRef_Rate_Transition_Buffer0 =
+    PMSM_FOC_DualPlant_Controller_P.IqRef_Rate_Transition_InitialCo;
 
-  /* InitializeConditions for Sum: '<S9>/Integrator_Add' incorporates:
-   *  UnitDelay: '<S9>/Integrator_State'
+  /* InitializeConditions for Sum: '<S8>/Integrator_Add' incorporates:
+   *  UnitDelay: '<S8>/Integrator_State'
    */
-  PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_o =
-    PMSM_FOC_DualPlant_Controller_P.Integrator_State_InitialCondi_b;
+  PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_d =
+    PMSM_FOC_DualPlant_Controller_P.Integrator_State_InitialCondi_m;
+
+  /* InitializeConditions for Sum: '<S10>/Integrator_Add' incorporates:
+   *  UnitDelay: '<S10>/Integrator_State'
+   */
+  PMSM_FOC_DualPlant_Controlle_DW.Integrator_State_DSTATE_f =
+    PMSM_FOC_DualPlant_Controller_P.Integrator_State_InitialCondi_g;
 }
 
 /* Model terminate function */

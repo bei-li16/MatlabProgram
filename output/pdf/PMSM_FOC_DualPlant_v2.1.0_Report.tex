@@ -1,0 +1,403 @@
+\documentclass[11pt,a4paper,fontset=fandol]{ctexart}
+
+\usepackage[a4paper,margin=22mm,headheight=15pt]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage{caption,float}
+\usepackage{pdflscape}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{lastpage}
+
+\definecolor{navy}{HTML}{17365D}
+\definecolor{blue}{HTML}{2F75B5}
+\definecolor{lightblue}{HTML}{DDEBF7}
+\definecolor{lightgray}{HTML}{F2F2F2}
+\definecolor{darkgray}{HTML}{505050}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=navy,
+  urlcolor=blue,
+  pdftitle={PMSM FOC Dual Plant v2.1.0 技术报告},
+  pdfauthor={MatlabProgram},
+  pdfsubject={双被控对象 PMSM FOC 模型架构、参数、曲线与验收数据}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small PMSM FOC Dual Plant v2.1.0}
+\fancyhead[R]{\small 技术报告}
+\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist[itemize]{leftmargin=2em,itemsep=0.25em,topsep=0.35em}
+\setlist[enumerate]{leftmargin=2em,itemsep=0.25em,topsep=0.35em}
+\captionsetup{font=small,labelfont=bf,labelsep=quad}
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{5pt}
+
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\sectionline}{\vspace{-0.55em}\noindent\color{blue}\rule{\textwidth}{0.8pt}\color{black}\vspace{0.35em}}
+
+\graphicspath{{Matlab_Projects/PMSM_FOC/model_codegen/PMSM_FOC_DualPlant_v2.1.0/}}
+
+\title{\bfseries\color{navy} PMSM FOC Dual Plant v2.1.0\\[0.35em]
+\Large 模型架构、控制组件、关键参数与验证报告}
+\author{MatlabProgram}
+\date{2026 年 8 月 28 日}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{26mm}
+  {\Huge\bfseries\color{navy} PMSM FOC Dual Plant v2.1.0\par}
+  \vspace{7mm}
+  {\LARGE 模型架构、控制组件、关键参数与验证报告\par}
+  \vspace{16mm}
+  \color{blue}\rule{0.82\textwidth}{1.2pt}\color{black}
+  \vspace{14mm}
+
+  \begin{tabular}{rl}
+    \textbf{模型平台：} & MATLAB/Simulink R2024a \\
+    \textbf{控制方案：} & 离散磁场定向控制（FOC） \\
+    \textbf{被控对象：} & Native 离散 PMSM / MathWorks PMSM HDL \\
+    \textbf{报告版本：} & v2.1.0 \\
+    \textbf{生成日期：} & 2026 年 8 月 28 日 \\
+  \end{tabular}
+
+  \vfill
+  {\large MatlabProgram\par}
+  \vspace{8mm}
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+\section{项目概述}
+\sectionline
+
+本版本在 \code{PMSM_FOC_Native_v2.0.0} 离散 FOC 闭环模型基础上，加入可切换的 MathWorks Motor Control Blockset PMSM HDL 被控对象。原 v2.0.0 目录和模型保持不变。两个电机对象共用同一 FOC 控制器、平均逆变器、仿真工况和信号接口，可用于直接比较两种被控对象的闭环控制效果。
+
+\subsection{主要文件}
+
+\begin{itemize}
+  \item \code{PMSM_FOC_DualPlant_ClosedLoop_v21.slx}：闭环仿真顶层模型。
+  \item \code{PMSM_FOC_DualPlant_Controller_v21.slx}：可独立生成 ERT C 代码的控制器模型。
+  \item \code{build_pmsm_foc_dualplant_v21.m}：配置模型、依次仿真两个被控对象、绘图、导出架构图、生成代码并写入验收报告。
+  \item \code{refactor_pmsm_foc_controller_v21.m}：清空旧顶层连线，并按经典级联 FOC 拓扑重建两个 v2.1.0 模型。
+  \item \code{switch_pmsm_plant_v21.m}：在仿真停止时切换 Variant 选择。
+  \item \code{verification_report.txt}：最近一次自动验收数据。
+  \item \code{PMSM_FOC_DualPlant_v21_results.png}：两个被控对象的关键曲线对比。
+\end{itemize}
+
+\section{模型总体架构}
+\sectionline
+
+闭环信号链由速度和负载工况、组件化 FOC 控制器、48 V 平均逆变器以及可切换 PMSM 被控对象组成。速度外环以 1 ms 周期执行，显式 Rate Transition 将 $I_q^*$ 传入 $100\,\mu\mathrm{s}$ 电流任务；Clarke、Park、D/Q 电流 PI、解耦、电压合成、逆变换和 SVPWM 均在顶层直接显示。控制器输出三相占空比，被控对象返回速度、电角度、相电流、转矩和 $d/q$ 轴电流。
+
+\begin{center}
+\fcolorbox{blue}{lightblue}{%
+\begin{minipage}{0.91\textwidth}
+\centering\small
+1000 rpm 速度阶跃 $\rightarrow$ Speed PI（1 ms）$\rightarrow$ Rate Transition
+\\[0.3em]
+$\Downarrow$
+\\[0.3em]
+Clarke/Park $\rightarrow$ D/Q Current PI $\rightarrow$ DQ Voltage Command
+\\[0.3em]
+$\Downarrow$
+\\[0.3em]
+Inverse Park $\rightarrow$ Inverse Clarke $\rightarrow$ SVPWM $\rightarrow$ Inverter
+\\[0.3em]
+$\Downarrow$
+\\[0.3em]
+Selectable PMSM Plant $\rightarrow$ Speed/Theta/Ia/Ib/Torque/Id/Iq feedback
+\end{minipage}}
+\end{center}
+
+\begin{landscape}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{PMSM_FOC_DualPlant_v21_architecture.png}
+  \caption{闭环模型顶层架构：速度外环、电流内环、逆变换、SVPWM 与 PMSM 反馈链}
+  \label{fig:top-architecture}
+\end{figure}
+\end{landscape}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\textwidth]{PMSM_FOC_DualPlant_v21_plant_variants.png}
+  \caption{双电机 Variant 子系统架构}
+  \label{fig:plant-variants}
+\end{figure}
+
+\section{FOC 控制器组件架构}
+\sectionline
+
+控制器已删除旧的 \code{Native_FOC_Controller_100us} 和 \code{Current_Control_100us} 大包装块，改为 10 个可以独立打开、检查和维护的顶层组件。每个组件内部包含职责、公式、采样周期、参数名称和限幅说明，块的 \code{Description} 属性也保留相应参数摘要。
+
+\subsection{原模型问题与本次修复}
+
+原图中的红色虚线来自旧重构逻辑遗留的悬空或重复顶层分支：子系统端口被删除并重建时，父层旧线段未被完整清理。本次脚本在重建前删除全部顶层信号线和旧包装块，再按确定的级联拓扑完整连接，并在保存前检查每条线的源端与目标端。最终控制器模型和闭环模型的悬空线计数均为 0。
+
+原模型虽然在内部含有 1 ms 速度状态，但外层名称和显示结构均为 \code{100us}，容易误判只有一个任务。现在 \code{Speed_PI_Controller_1ms}、\code{IqRef_Rate_Transition} 和所有 $100\,\mu\mathrm{s}$ 电流控制组件在顶层明确可见，速度环与电流环不再混放。
+
+\begin{landscape}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{PMSM_FOC_DualPlant_v21_controller_architecture.png}
+  \caption{组件化 FOC 控制器架构}
+  \label{fig:controller-architecture}
+\end{figure}
+\end{landscape}
+
+\subsection{组件职责与责任边界}
+
+{\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.19\textwidth}
+                  >{\raggedright\arraybackslash}p{0.22\textwidth}
+                  >{\raggedright\arraybackslash}p{0.29\textwidth}
+                  >{\raggedright\arraybackslash}p{0.22\textwidth}}
+\caption{FOC 控制组件职责、接口与关键参数}\label{tab:foc-components}\\
+\toprule
+\textbf{组件} & \textbf{单一责任} & \textbf{主要接口} & \textbf{关键参数或约束} \\
+\midrule
+\endfirsthead
+\multicolumn{4}{l}{\small 表 \thetable\ （续）}\\
+\toprule
+\textbf{组件} & \textbf{单一责任} & \textbf{主要接口} & \textbf{关键参数或约束} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{4}{r}{\small 下页续}\\
+\endfoot
+\bottomrule
+\endlastfoot
+
+{\ttfamily\scriptsize Speed\_PI\_\allowbreak Controller\_1ms} &
+将速度误差转换为 $q$ 轴电流给定 &
+\code{SpeedReferenceRpm}, \code{SpeedRpm} $\rightarrow$ \code{IqReference} &
+1 ms；\code{FOC_Native_KpSpeed}、\code{FOC_Native_KiSpeed}；$\pm$\code{FOC_Native_IqLimit} \\
+
+\code{Clarke_Transform} &
+两相采样电流转换到静止 $\alpha/\beta$ 坐标系 &
+\code{Ia}, \code{Ib} $\rightarrow$ \code{Ialpha}, \code{Ibeta} &
+$I_\alpha=I_a$；$I_\beta=(I_a+2I_b)/\sqrt{3}$ \\
+
+\code{Park_Transform} &
+$\alpha/\beta$ 电流转换到旋转 $d/q$ 坐标系 &
+\code{Ialpha}, \code{Ibeta}, \code{ThetaElectrical} $\rightarrow$ \code{Id}, \code{Iq} &
+正弦/余弦角度变换；$100\,\mu\mathrm{s}$ 数据通路 \\
+
+\code{D_Axis_Current_PI} &
+将 $d$ 轴电流调节到 0 A &
+\code{Reference=0}, \code{Id} $\rightarrow$ \code{VdPI} &
+$100\,\mu\mathrm{s}$；电流 PI 参数；积分器限幅 $\pm30$ \\
+
+\code{Q_Axis_Current_PI} &
+跟踪速度环给出的 $q$ 轴电流 &
+\code{IqReference}, \code{Iq} $\rightarrow$ \code{VqPI} &
+$100\,\mu\mathrm{s}$；电流 PI 参数；积分器限幅 $\pm30$ \\
+
+{\ttfamily\scriptsize DQ\_Decoupling\_\allowbreak Feedforward} &
+补偿 $d/q$ 轴交叉耦合与反电动势 &
+\code{SpeedRpm}, \code{Id}, \code{Iq} $\rightarrow$ \code{VdFeedforward}, \code{VqFeedforward} &
+极对数、$L_d$、$L_q$、永磁磁链 \\
+
+\code{DQ_Voltage_Command} &
+合并 PI 与前馈项并形成有界电压指令 &
+PI/前馈电压 $\rightarrow$ \code{VdCommand}, \code{VqCommand} &
+$d/q$ 轴分别限幅至 $\pm26$ V \\
+
+{\ttfamily\scriptsize Inverse\_Park\_\allowbreak Transform} &
+$d/q$ 电压转换回静止 $\alpha/\beta$ 坐标系 &
+\code{Vd}, \code{Vq}, \code{ThetaElectrical} $\rightarrow$ \code{Valpha}, \code{Vbeta} &
+与 Park 变换采用同一电角度约定 \\
+
+{\ttfamily\scriptsize Inverse\_Clarke\_\allowbreak Transform} &
+$\alpha/\beta$ 电压转换为三相电压 &
+\code{Valpha}, \code{Vbeta} $\rightarrow$ \code{Va}, \code{Vb}, \code{Vc} &
+$V_a=V_\alpha$；B/C 相使用 $\pm\sqrt{3}/2$ \\
+
+{\ttfamily\scriptsize SVPWM\_Duty\_\allowbreak Calculation} &
+公共模注入、母线归一化和占空比限幅 &
+\code{Va}, \code{Vb}, \code{Vc}, \code{Vdc} $\rightarrow$ \code{DutyA/B/C} &
+$V_{\mathrm{offset}}=-0.5(V_{\max}+V_{\min})$；占空比 0.02--0.98 \\
+\end{longtable}
+}
+
+速度 PI 状态更新周期为 1 ms，D/Q 电流 PI 状态更新周期为 $100\,\mu\mathrm{s}$；两者之间的 Rate Transition 负责确定性的跨速率数据传递。Clarke/Park、解耦、逆变换和 SVPWM 位于 $100\,\mu\mathrm{s}$ 电流控制通路。控制器外部 6 输入/8 输出接口保持不变。
+
+\subsection{控制过程与参数边界}
+
+控制过程按以下顺序执行：
+
+\begin{enumerate}
+  \item 速度 PI 以 1 ms 周期根据速度给定和机械速度产生 $q$ 轴电流给定。
+  \item Rate Transition 将 $I_q^*$ 从 1 ms 速度任务传递到 $100\,\mu\mathrm{s}$ 电流任务。
+  \item Clarke 和 Park 变换将相电流映射到旋转 $d/q$ 坐标系。
+  \item D/Q 轴电流 PI 分别调节励磁与转矩电流。
+  \item 解耦前馈补偿交叉耦合项和永磁体反电动势。
+  \item DQ 电压合成组件叠加 PI 与前馈电压并执行限幅。
+  \item 逆 Park 和逆 Clarke 变换得到三相电压参考。
+  \item SVPWM 通过公共模注入、母线归一化和占空比限幅产生三相占空比。
+\end{enumerate}
+
+\section{被控对象公共接口}
+\sectionline
+
+两个 PMSM 被控对象使用相同的电压、负载和反馈接口。MathWorks 分支先将 $\alpha/\beta$ 电压转换为三相电压，再送入官方 \code{mcbhdlplantlib/PMSM HDL} 块，并将官方块输出转换回公共接口。
+
+\begin{table}[H]
+\centering
+\caption{PMSM 被控对象公共接口}
+\label{tab:plant-interface}
+\begin{tabularx}{0.9\textwidth}{>{\bfseries}p{0.12\textwidth} p{0.30\textwidth} X}
+\toprule
+方向 & 信号 & 含义 \\
+\midrule
+输入 & \code{VAlpha}, \code{VBeta} & 静止 $\alpha/\beta$ 坐标系定子电压指令 \\
+输入 & \code{LoadTorque} & 负载转矩，单位 N$\cdot$m \\
+输出 & \code{SpeedRpm} & 机械转速，单位 rpm \\
+输出 & \code{ThetaElectrical} & 电角度，单位 rad \\
+输出 & \code{Ia}, \code{Ib} & A/B 相电流，单位 A \\
+输出 & \code{TorqueNm} & 电磁转矩，单位 N$\cdot$m \\
+输出 & \code{Id}, \code{Iq} & $d/q$ 轴电流，单位 A \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{仿真工况与关键参数}
+\sectionline
+
+仿真使用 MATLAB/Simulink R2024a，求解器为 \code{FixedStepDiscrete}，仿真时长为 2.0 s。
+
+\begin{table}[H]
+\centering
+\caption{仿真工况及控制、电机参数}
+\label{tab:parameters}
+\small
+\begin{tabularx}{0.94\textwidth}{p{0.15\textwidth} p{0.40\textwidth} X}
+\toprule
+\textbf{类别} & \textbf{参数} & \textbf{数值} \\
+\midrule
+工况 & 速度给定 & 0.05 s 时由 0 阶跃至 1000 rpm \\
+工况 & 负载转矩 & 0.5 s 时由 0 阶跃至 0.2 N$\cdot$m \\
+电源 & 直流母线电压 & 48 V \\
+调度 & 电流环/基础步长 & $100\,\mu\mathrm{s}$ \\
+调度 & 速度环周期 & 1 ms \\
+速度环 & $K_p$, $K_i$ & 0.02, 0.05 \\
+电流环 & $K_p$, $K_i$ & 1.0, 500.0 \\
+限幅 & $q$ 轴电流 & $\pm8$ A \\
+限幅 & 电流积分器 & $\pm30$ \\
+限幅 & 电压指令 & $\pm26$ V \\
+限幅 & 三相占空比 & 0.02--0.98 \\
+电机 & 定子电阻 $R_s$ & 0.4 $\Omega$ \\
+电机 & $d/q$ 轴电感 $L_d$, $L_q$ & 1 mH, 1 mH \\
+电机 & 永磁磁链 $\lambda_{pm}$ & 0.05 Wb \\
+电机 & 极对数 & 4 \\
+电机 & 转动惯量 $J$ & 0.002 kg$\cdot$m$^2$ \\
+电机 & 黏性阻尼 $B$ & 0.0001 N$\cdot$m$\cdot$s/rad \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{关键曲线}
+\sectionline
+
+图 \ref{fig:results} 由同一次脚本运行依次仿真两个 Variant 后生成，包含机械转速、$q$ 轴电流、电磁转矩和 A 相占空比。实线为 Native 离散 PMSM，虚线为 MathWorks PMSM HDL。两条曲线在当前参数和工况下基本重合。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\textwidth]{PMSM_FOC_DualPlant_v21_results.png}
+  \caption{双电机关键曲线对比}
+  \label{fig:results}
+\end{figure}
+
+\section{仿真数据与验收结果}
+\sectionline
+
+最近一次 MATLAB R2024a 自动验证结果如下。
+
+\begin{table}[H]
+\centering
+\caption{两个 PMSM 被控对象的自动验收结果}
+\label{tab:verification}
+\small
+\begin{tabularx}{0.94\textwidth}{X >{\raggedleft\arraybackslash}p{0.28\textwidth} >{\raggedleft\arraybackslash}p{0.28\textwidth}}
+\toprule
+\textbf{指标} & \textbf{Native 离散 PMSM} & \textbf{MathWorks PMSM HDL} \\
+\midrule
+最终转速 & 992.876831 rpm & 992.876770 rpm \\
+最大转速 & 1084.82007 rpm & 1084.82007 rpm \\
+最大绝对 $I_q$ & 2.14349937 A & 2.14349937 A \\
+Duty A 最小值 & 0.0849412978 & 0.0849412978 \\
+Duty A 最大值 & 0.915064812 & 0.915064812 \\
+最终电磁转矩 & 0.204457477 N$\cdot$m & 0.204457372 N$\cdot$m \\
+闭环限值检查 & \textbf{PASS} & \textbf{PASS} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+两个分支的最终转速差约为 $6.1\times10^{-5}$ rpm，最大转速一致。关键曲线和稳态数据表明，两个被控对象在当前平均值闭环工况下具有一致的控制响应。
+
+结构与代码检查同时确认：
+
+\begin{itemize}
+  \item Variant 分支数为 2，Native 分支存在。
+  \item 官方块引用为 \texttt{mcbhdlplantlib/}\allowbreak\texttt{PMSM HDL}。
+  \item 控制器与闭环模型均包含 10 个顶层控制组件和显式 Rate Transition。
+  \item 速度任务周期为 0.001 s，电流任务周期为 0.0001 s。
+  \item 控制器模型与闭环模型的悬空线计数均为 0。
+  \item Dashboard 一键切换控件存在，旧 HTML 富文本链接已删除。
+  \item ERT 生成代码包含输入/输出结构以及 \code{initialize/step} 接口，未检测到 S-Function 文本。
+\end{itemize}
+
+\section{电机对象切换方法}
+\sectionline
+
+模型工作区变量 \code{PMSM_PLANT_SELECTION} 控制 Variant：
+
+\begin{itemize}
+  \item \code{1}：\code{Native_Discrete_PMSM}。
+  \item \code{2}：\code{MathWorks_MCB_PMSM_HDL}，默认选择。
+\end{itemize}
+
+仿真停止时，可单击 Dashboard 按钮 \path{Switch_PMSM_Plant} 切换分支。按钮调用 \path{switch_pmsm_plant_v21.m} 并显示新的活动对象。下一次开始仿真时，Simulink 编译所选分支。旧版富文本超链接已删除，因为 Simulink 导出 PNG 时会把 HTML 原文铺在架构图上。
+
+\section{重建与复核}
+\sectionline
+
+在 MATLAB 中将当前目录切换到 v2.1.0 模型目录并运行：
+
+\begin{center}
+\fcolorbox{darkgray}{lightgray}{\parbox{0.82\textwidth}{\ttfamily\centering build\_pmsm\_foc\_dualplant\_v21}}
+\end{center}
+
+脚本将依次完成以下工作：
+
+\begin{enumerate}
+  \item 验证两个 PMSM 被控对象的闭环响应。
+  \item 刷新四幅 PNG 文档图。
+  \item 核对 10 个控制组件及上下层接口连线。
+  \item 重建控制器 ERT C 代码。
+  \item 更新 \code{verification_report.txt} 自动验收报告。
+\end{enumerate}
+
+生成 C 代码的目标仅为控制器模型；两个 PMSM 被控对象属于仿真环境，不进入控制器目标代码。所需产品包括 Simulink、Motor Control Blockset、Simulink Coder 和 Embedded Coder。
+
+\section{结论}
+\sectionline
+
+PMSM FOC Dual Plant v2.1.0 在保持控制器外部接口不变的前提下，将速度 PI、Clarke/Park、D/Q 电流 PI、解耦、电压合成、逆 Park、逆 Clarke 及 SVPWM 明确拆分为 10 个顶层独立组件，并通过 Rate Transition 清晰划分 1 ms 速度任务与 $100\,\mu\mathrm{s}$ 电流任务。自动仿真数据表明 Native 离散 PMSM 与 MathWorks PMSM HDL 在当前工况下具有近似一致的闭环响应；模型连线、组件边界、双速率调度和 ERT 代码接口均通过自动检查。
+
+\end{document}

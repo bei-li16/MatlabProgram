@@ -39,8 +39,8 @@ load_system('simulink_hmi_blocks');
 load_system(controllerFile);
 load_system(harnessFile);
 
-refactor_pmsm_foc_controller_v21;
 configureDualPlantHarness(harnessName, harnessFile, versionDirectory);
+refactor_pmsm_foc_controller_v21;
 
 nativeOutput = simulatePlant(harnessName, 1);
 mcbOutput = simulatePlant(harnessName, 2);
@@ -79,6 +79,10 @@ fprintf('CODEX_DUAL_VARIANT_CHOICES=%d\n', variantReport.ChoiceCount);
 fprintf('CODEX_DUAL_MCB_REFERENCE_OK=%d\n', variantReport.McbReferencePresent);
 fprintf('CODEX_DUAL_ONE_CLICK_LINK=%d\n', variantReport.OneClickLinkPresent);
 fprintf('CODEX_DUAL_FOC_COMPONENTS=%d\n', architectureReport.ComponentCount);
+fprintf('CODEX_DUAL_SPEED_TASK_S=%.9g\n', architectureReport.SpeedTaskSampleTime);
+fprintf('CODEX_DUAL_CURRENT_TASK_S=%.9g\n', architectureReport.CurrentTaskSampleTime);
+fprintf('CODEX_DUAL_CONTROLLER_DANGLING_LINES=%d\n', architectureReport.ControllerDanglingLines);
+fprintf('CODEX_DUAL_HARNESS_DANGLING_LINES=%d\n', architectureReport.HarnessDanglingLines);
 fprintf('CODEX_DUAL_ARCHITECTURE_PASS=%d\n', architectureReport.Pass);
 fprintf('CODEX_DUAL_CODE_PASS=%d\n', codeReport.Pass);
 fprintf('CODEX_DUAL_DEFAULT_SELECTION=2\n');
@@ -133,7 +137,7 @@ if getSimulinkBlockHandle(buttonPath) == -1
         'Position', [1240 100 1570 165]);
 end
 configureCallbackButton(buttonPath, versionDirectory);
-configureOneClickAnnotation(modelName, versionDirectory);
+removeLegacyOneClickAnnotation(modelName);
 
 set_param(modelName, 'StopTime', '2.0');
 set_param(modelName, 'SolverType', 'Fixed-step', ...
@@ -280,30 +284,16 @@ end
 set_param(buttonPath, 'Configuration', jsonencode(configuration));
 end
 
-function configureOneClickAnnotation(modelName, versionDirectory)
+function removeLegacyOneClickAnnotation(modelName)
 marker = 'ONE-CLICK PMSM PLANT SWITCH';
-callbackCode = ['run(fullfile(''' strrep(versionDirectory, '''', '''''') ...
-    ''',''switch_pmsm_plant_v21.m''))'];
 annotationHandles = find_system(modelName, 'FindAll', 'on', ...
     'Type', 'annotation');
-annotationObject = [];
 for annotationIndex = 1:numel(annotationHandles)
     candidate = get_param(annotationHandles(annotationIndex), 'Object');
     if contains(candidate.Text, marker)
-        annotationObject = candidate;
-        break;
+        delete(candidate);
     end
 end
-if isempty(annotationObject)
-    annotationObject = Simulink.Annotation(modelName, marker);
-end
-annotationObject.Interpreter = 'rich';
-annotationObject.Text = ['<a href="matlab:' callbackCode '">' marker ...
-    '</a><br/>Active: MathWorks Motor Control Blockset PMSM HDL'];
-annotationObject.Position = [1240 190 1570 250];
-annotationObject.FontSize = 13;
-annotationObject.BackgroundColor = 'lightBlue';
-annotationObject.ForegroundColor = 'blue';
 end
 
 function simulationOutput = simulatePlant(modelName, selection)
@@ -414,7 +404,6 @@ overviewPath = fullfile(versionDirectory, ...
 plantPath = [modelName '/Selectable_PMSM_Plant'];
 plantImagePath = fullfile(versionDirectory, ...
     'PMSM_FOC_DualPlant_v21_plant_variants.png');
-controllerPath = [controllerName '/Native_FOC_Controller_100us'];
 controllerImagePath = fullfile(versionDirectory, ...
     'PMSM_FOC_DualPlant_v21_controller_architecture.png');
 
@@ -422,8 +411,9 @@ open_system(modelName);
 print(['-s' modelName], '-dpng', '-r160', overviewPath);
 open_system(plantPath);
 print(['-s' plantPath], '-dpng', '-r160', plantImagePath);
-open_system(controllerPath);
-print(['-s' controllerPath], '-dpng', '-r180', controllerImagePath);
+open_system(controllerName);
+set_param(controllerName, 'ZoomFactor', 'FitSystem');
+print(['-s' controllerName], '-dpng', '-r180', controllerImagePath);
 end
 
 function report = inspectVariantStructure(modelName)
@@ -440,16 +430,9 @@ report.NativeChoicePresent = getSimulinkBlockHandle( ...
     [variantPath '/Native_Discrete_PMSM']) ~= -1;
 report.CallbackButtonPresent = getSimulinkBlockHandle( ...
     [modelName '/Switch_PMSM_Plant']) ~= -1;
-annotationHandles = find_system(modelName, 'FindAll', 'on', ...
-    'Type', 'annotation');
-report.OneClickLinkPresent = false;
-for annotationIndex = 1:numel(annotationHandles)
-    annotationObject = get_param(annotationHandles(annotationIndex), 'Object');
-    if contains(annotationObject.Text, 'ONE-CLICK PMSM PLANT SWITCH')
-        report.OneClickLinkPresent = true;
-        break;
-    end
-end
+% The Dashboard button is the one-click control. The legacy rich-text link
+% was removed because print() exported its raw HTML across the diagram.
+report.OneClickLinkPresent = report.CallbackButtonPresent;
 end
 
 function report = inspectGeneratedControllerCode(controllerName, versionDirectory)
@@ -471,36 +454,49 @@ report.Pass = report.HasStep && report.HasInitialize && report.HasInputs && ...
 end
 
 function report = inspectControllerArchitecture(controllerName, harnessName)
-componentNames = {'Speed_PI_Controller', 'Clarke_Transform', ...
-    'Park_Transform', 'D_Axis_Current_PI', 'Q_Axis_Current_PI', ...
+componentPaths = {'Speed_PI_Controller_1ms', ...
+    'Clarke_Transform', 'Park_Transform', ...
+    'D_Axis_Current_PI', 'Q_Axis_Current_PI', ...
     'DQ_Decoupling_Feedforward', 'DQ_Voltage_Command', ...
     'Inverse_Park_Transform', 'Inverse_Clarke_Transform', ...
     'SVPWM_Duty_Calculation'};
-controllerPath = [controllerName '/Native_FOC_Controller_100us'];
-harnessPath = [harnessName '/Native_FOC_Controller_100us'];
-report.ComponentCount = numel(componentNames);
-report.ControllerComponentsPresent = all(cellfun(@(name) ...
-    getSimulinkBlockHandle([controllerPath '/' name]) ~= -1, componentNames));
-report.HarnessComponentsPresent = all(cellfun(@(name) ...
-    getSimulinkBlockHandle([harnessPath '/' name]) ~= -1, componentNames));
-[report.ControllerInputsConnected, report.ControllerOutputsConnected] = ...
-    countBoundaryConnections(controllerPath);
-[report.HarnessInputsConnected, report.HarnessOutputsConnected] = ...
-    countBoundaryConnections(harnessPath);
+report.ComponentCount = numel(componentPaths);
+report.ControllerComponentsPresent = all(cellfun(@(path) ...
+    getSimulinkBlockHandle([controllerName '/' path]) ~= -1, componentPaths));
+report.HarnessComponentsPresent = all(cellfun(@(path) ...
+    getSimulinkBlockHandle([harnessName '/' path]) ~= -1, componentPaths));
+report.ControllerRateTransitionPresent = getSimulinkBlockHandle( ...
+    [controllerName '/IqRef_Rate_Transition']) ~= -1;
+report.HarnessRateTransitionPresent = getSimulinkBlockHandle( ...
+    [harnessName '/IqRef_Rate_Transition']) ~= -1;
+report.SpeedTaskSampleTime = str2double(get_param( ...
+    [controllerName '/Speed_PI_Controller_1ms/Integrator_State'], 'SampleTime'));
+report.CurrentTaskSampleTime = str2double(get_param( ...
+    [controllerName '/D_Axis_Current_PI/Integrator_State'], ...
+    'SampleTime'));
+report.ControllerDanglingLines = countDanglingLines(controllerName);
+report.HarnessDanglingLines = countDanglingLines(harnessName);
 report.Pass = report.ControllerComponentsPresent && ...
     report.HarnessComponentsPresent && ...
-    report.ControllerInputsConnected == 6 && ...
-    report.ControllerOutputsConnected == 8 && ...
-    report.HarnessInputsConnected == 6 && ...
-    report.HarnessOutputsConnected == 4;
+    report.ControllerRateTransitionPresent && ...
+    report.HarnessRateTransitionPresent && ...
+    abs(report.SpeedTaskSampleTime - 0.001) < eps && ...
+    abs(report.CurrentTaskSampleTime - 0.0001) < eps && ...
+    report.ControllerDanglingLines == 0 && ...
+    report.HarnessDanglingLines == 0;
 end
 
-function [inputCount, outputCount] = countBoundaryConnections(subsystemPath)
-portHandles = get_param(subsystemPath, 'PortHandles');
-inputCount = sum(arrayfun(@(portHandle) ...
-    get_param(portHandle, 'Line') ~= -1, portHandles.Inport));
-outputCount = sum(arrayfun(@(portHandle) ...
-    get_param(portHandle, 'Line') ~= -1, portHandles.Outport));
+function count = countDanglingLines(parent)
+count = 0;
+lineHandles = find_system(parent, 'FindAll', 'on', 'SearchDepth', 1, 'Type', 'line');
+for index = 1:numel(lineHandles)
+    sourcePort = get_param(lineHandles(index), 'SrcPortHandle');
+    destinationPorts = get_param(lineHandles(index), 'DstPortHandle');
+    if isempty(sourcePort) || sourcePort == -1 || isempty(destinationPorts) || ...
+            any(destinationPorts == -1)
+        count = count + 1;
+    end
+end
 end
 
 function writeVerificationReport(versionDirectory, controllerName, harnessName, ...
@@ -519,18 +515,24 @@ fprintf(reportHandle, 'Native choice present: %d\n', variantReport.NativeChoiceP
 fprintf(reportHandle, 'MathWorks reference: %s\n', variantReport.McbReference);
 fprintf(reportHandle, 'MathWorks reference verified: %d\n', variantReport.McbReferencePresent);
 fprintf(reportHandle, 'Callback button present: %d\n', variantReport.CallbackButtonPresent);
-fprintf(reportHandle, 'One-click switch link present: %d\n', variantReport.OneClickLinkPresent);
+fprintf(reportHandle, 'One-click switch control present: %d\n', variantReport.OneClickLinkPresent);
 fprintf(reportHandle, 'FOC component count: %d\n', architectureReport.ComponentCount);
 fprintf(reportHandle, 'Controller components present: %d\n', ...
     architectureReport.ControllerComponentsPresent);
 fprintf(reportHandle, 'Harness components present: %d\n', ...
     architectureReport.HarnessComponentsPresent);
-fprintf(reportHandle, 'Controller boundary connections (in/out): %d/%d\n', ...
-    architectureReport.ControllerInputsConnected, ...
-    architectureReport.ControllerOutputsConnected);
-fprintf(reportHandle, 'Harness boundary connections (in/out): %d/%d\n', ...
-    architectureReport.HarnessInputsConnected, ...
-    architectureReport.HarnessOutputsConnected);
+fprintf(reportHandle, 'Controller rate transition present: %d\n', ...
+    architectureReport.ControllerRateTransitionPresent);
+fprintf(reportHandle, 'Harness rate transition present: %d\n', ...
+    architectureReport.HarnessRateTransitionPresent);
+fprintf(reportHandle, 'Speed task sample time s: %.9g\n', ...
+    architectureReport.SpeedTaskSampleTime);
+fprintf(reportHandle, 'Current task sample time s: %.9g\n', ...
+    architectureReport.CurrentTaskSampleTime);
+fprintf(reportHandle, 'Controller dangling line count: %d\n', ...
+    architectureReport.ControllerDanglingLines);
+fprintf(reportHandle, 'Harness dangling line count: %d\n', ...
+    architectureReport.HarnessDanglingLines);
 fprintf(reportHandle, 'Component architecture verification pass: %d\n', ...
     architectureReport.Pass);
 writeMetrics(reportHandle, 'Native', nativeMetrics, nativePass);

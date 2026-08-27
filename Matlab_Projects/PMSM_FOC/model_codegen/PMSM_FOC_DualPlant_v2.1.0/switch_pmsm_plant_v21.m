@@ -1,5 +1,5 @@
 % SWITCH_PMSM_PLANT_V21 Toggle the active plant in the dual-plant harness.
-% This script is invoked by the dashboard button or the one-click link.
+% This script is invoked by the dashboard one-click switch button.
 
 modelName = 'PMSM_FOC_DualPlant_ClosedLoop_v21';
 if isempty(modelName) || ~bdIsLoaded(modelName)
@@ -36,23 +36,8 @@ if getSimulinkBlockHandle(buttonPath) ~= -1
     set_param(buttonPath, 'Configuration', jsonencode(configuration));
 end
 
-versionDirectory = fileparts(mfilename('fullpath'));
-callbackCode = ['run(fullfile(''' strrep(versionDirectory, '''', '''''') ...
-    ''',''switch_pmsm_plant_v21.m''))'];
-annotationHandles = find_system(modelName, 'FindAll', 'on', ...
-    'Type', 'annotation');
-for annotationIndex = 1:numel(annotationHandles)
-    annotationObject = get_param(annotationHandles(annotationIndex), 'Object');
-    if contains(annotationObject.Text, 'ONE-CLICK PMSM PLANT SWITCH')
-        annotationObject.Interpreter = 'rich';
-        annotationObject.Text = ['<a href="matlab:' callbackCode '">' ...
-            'ONE-CLICK PMSM PLANT SWITCH</a><br/>Active: ' nextName];
-    end
-end
-
 save_system(modelName);
 fprintf('PMSM_PLANT_SELECTION=%d (%s)\n', nextSelection, nextName);
 
 clear modelName modelWorkspace currentSelection nextSelection nextName
 clear buttonPath configuration componentIndex states stateIndex
-clear versionDirectory callbackCode annotationHandles annotationIndex annotationObject

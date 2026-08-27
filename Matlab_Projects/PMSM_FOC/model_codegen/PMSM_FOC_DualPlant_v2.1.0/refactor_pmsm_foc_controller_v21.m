@@ -1,8 +1,11 @@
 function refactor_pmsm_foc_controller_v21
-%REFACTOR_PMSM_FOC_CONTROLLER_V21 Build a componentized FOC architecture.
-% The external 6-input/8-output interface is preserved. Internally, signal
-% transforms, cascaded PI loops, decoupling, voltage synthesis, and SVPWM
-% are separated into documented subsystems with explicit responsibilities.
+%REFACTOR_PMSM_FOC_CONTROLLER_V21 Build an explicit cascaded dual-rate FOC.
+% The code-generation model keeps its 6-input/8-output interface. Both model
+% roots show the textbook cascade directly: 1 ms speed PI, explicit 1 ms to
+% 100 us rate transition, Clarke/Park feedback transforms, independent d/q
+% current PIs, decoupling, inverse transforms, SVPWM, inverter, and PMSM.
+% Rebuilding starts from a clean top-level wiring graph, so stale or dangling
+% red line segments cannot survive a refactor.
 
 versionDirectory = fileparts(mfilename('fullpath'));
 previousDirectory = pwd;
@@ -17,151 +20,264 @@ harnessFile = fullfile(versionDirectory, [harnessName '.slx']);
 load_system(controllerFile);
 load_system(harnessFile);
 
-controllerPath = [controllerName '/Native_FOC_Controller_100us'];
-harnessControllerPath = [harnessName '/Native_FOC_Controller_100us'];
-assert(getSimulinkBlockHandle(controllerPath) ~= -1, ...
-    'Controller subsystem is missing from the code-generation model.');
-assert(getSimulinkBlockHandle(harnessControllerPath) ~= -1, ...
-    'Controller subsystem is missing from the closed-loop model.');
-
-buildComponentizedController(controllerPath);
-buildComponentizedController(harnessControllerPath);
+buildControllerModelArchitecture(controllerName);
+buildHarnessArchitecture(harnessName);
+open_system(controllerName);
+set_param(controllerName, 'ZoomFactor', 'FitSystem');
+set_param(controllerName, 'ZoomFactor', '100');
+open_system(harnessName);
+set_param(harnessName, 'ZoomFactor', 'FitSystem');
+set_param(harnessName, 'ZoomFactor', '100');
 save_system(controllerName, controllerFile);
 save_system(harnessName, harnessFile);
 
 fprintf('CODEX_FOC_COMPONENTS=%d\n', 10);
 fprintf('CODEX_FOC_CONTROLLER_MODEL=%s\n', controllerName);
 fprintf('CODEX_FOC_HARNESS_MODEL=%s\n', harnessName);
+fprintf('CODEX_FOC_SPEED_TASK_S=0.001\n');
+fprintf('CODEX_FOC_CURRENT_TASK_S=0.0001\n');
 fprintf('CODEX_FOC_ARCHITECTURE_PASS=1\n');
-open_system(controllerPath);
-set_param(controllerPath, 'ZoomFactor', 'FitSystem');
 end
 
-function buildComponentizedController(parent)
-externalConnections = captureExternalConnections(parent);
-Simulink.SubSystem.deleteContents(parent);
-set_param(parent, 'BackgroundColor', 'white');
+function buildControllerModelArchitecture(modelName)
+resetTopLevelArchitecture(modelName);
+buildTopLevelFocComponents(modelName, false);
 
-inputNames = {'SpeedReferenceRpm', 'SpeedRpm', 'Ia', 'Ib', ...
-    'ThetaElectrical', 'Vdc'};
-inputY = [70 125 230 285 340 520];
-for index = 1:numel(inputNames)
-    add_block('simulink/Sources/In1', [parent '/' inputNames{index}], ...
-        'Port', num2str(index), 'OutDataTypeStr', 'single', ...
-        'Position', [20 inputY(index) 50 inputY(index)+14]);
+setBlockPosition(modelName, 'SpeedReferenceRpm', [20 55 50 69]);
+setBlockPosition(modelName, 'SpeedRpm', [20 120 50 134]);
+setBlockPosition(modelName, 'PhaseCurrentA', [20 365 50 379]);
+setBlockPosition(modelName, 'PhaseCurrentB', [20 425 50 439]);
+setBlockPosition(modelName, 'ElectricalAngleRad', [20 485 50 499]);
+setBlockPosition(modelName, 'DcBusVoltage', [20 545 50 559]);
+setBlockPosition(modelName, 'IqReference', [510 20 540 34]);
+setBlockPosition(modelName, 'IdMeasured', [850 365 880 379]);
+setBlockPosition(modelName, 'IqMeasured', [850 405 880 419]);
+setBlockPosition(modelName, 'VdCommand', [1140 70 1170 84]);
+setBlockPosition(modelName, 'VqCommand', [1140 265 1170 279]);
+setBlockPosition(modelName, 'DutyA', [1830 75 1860 89]);
+setBlockPosition(modelName, 'DutyB', [1830 135 1860 149]);
+setBlockPosition(modelName, 'DutyC', [1830 195 1860 209]);
+
+add_line(modelName, 'SpeedReferenceRpm/1', 'Speed_PI_Controller_1ms/1', 'autorouting', 'on');
+add_line(modelName, 'SpeedRpm/1', 'Speed_PI_Controller_1ms/2', 'autorouting', 'on');
+add_line(modelName, 'Speed_PI_Controller_1ms/1', 'IqRef_Rate_Transition/1', 'autorouting', 'on');
+add_line(modelName, 'IqRef_Rate_Transition/1', 'Q_Axis_Current_PI/1', 'autorouting', 'on');
+add_line(modelName, 'IqRef_Rate_Transition/1', 'IqReference/1', 'autorouting', 'on');
+add_line(modelName, 'PhaseCurrentA/1', 'Clarke_Transform/1', 'autorouting', 'on');
+add_line(modelName, 'PhaseCurrentB/1', 'Clarke_Transform/2', 'autorouting', 'on');
+add_line(modelName, 'Clarke_Transform/1', 'Park_Transform/1', 'autorouting', 'on');
+add_line(modelName, 'Clarke_Transform/2', 'Park_Transform/2', 'autorouting', 'on');
+add_line(modelName, 'ElectricalAngleRad/1', 'Park_Transform/3', 'autorouting', 'on');
+add_line(modelName, 'Id_Reference_Zero/1', 'D_Axis_Current_PI/1', 'autorouting', 'on');
+add_line(modelName, 'Park_Transform/1', 'D_Axis_Current_PI/2', 'autorouting', 'on');
+add_line(modelName, 'Park_Transform/2', 'Q_Axis_Current_PI/2', 'autorouting', 'on');
+add_line(modelName, 'Park_Transform/1', 'IdMeasured/1', 'autorouting', 'on');
+add_line(modelName, 'Park_Transform/2', 'IqMeasured/1', 'autorouting', 'on');
+add_line(modelName, 'SpeedRpm/1', 'DQ_Decoupling_Feedforward/1', 'autorouting', 'on');
+add_line(modelName, 'Park_Transform/1', 'DQ_Decoupling_Feedforward/2', 'autorouting', 'on');
+add_line(modelName, 'Park_Transform/2', 'DQ_Decoupling_Feedforward/3', 'autorouting', 'on');
+add_line(modelName, 'D_Axis_Current_PI/1', 'DQ_Voltage_Command/1', 'autorouting', 'on');
+add_line(modelName, 'Q_Axis_Current_PI/1', 'DQ_Voltage_Command/2', 'autorouting', 'on');
+add_line(modelName, 'DQ_Decoupling_Feedforward/1', 'DQ_Voltage_Command/3', 'autorouting', 'on');
+add_line(modelName, 'DQ_Decoupling_Feedforward/2', 'DQ_Voltage_Command/4', 'autorouting', 'on');
+add_line(modelName, 'DQ_Voltage_Command/1', 'VdCommand/1', 'autorouting', 'on');
+add_line(modelName, 'DQ_Voltage_Command/2', 'VqCommand/1', 'autorouting', 'on');
+add_line(modelName, 'DQ_Voltage_Command/1', 'Inverse_Park_Transform/1', 'autorouting', 'on');
+add_line(modelName, 'DQ_Voltage_Command/2', 'Inverse_Park_Transform/2', 'autorouting', 'on');
+add_line(modelName, 'ElectricalAngleRad/1', 'Inverse_Park_Transform/3', 'autorouting', 'on');
+add_line(modelName, 'Inverse_Park_Transform/1', 'Inverse_Clarke_Transform/1', 'autorouting', 'on');
+add_line(modelName, 'Inverse_Park_Transform/2', 'Inverse_Clarke_Transform/2', 'autorouting', 'on');
+add_line(modelName, 'Inverse_Clarke_Transform/1', 'SVPWM_Duty_Calculation/1', 'autorouting', 'on');
+add_line(modelName, 'Inverse_Clarke_Transform/2', 'SVPWM_Duty_Calculation/2', 'autorouting', 'on');
+add_line(modelName, 'Inverse_Clarke_Transform/3', 'SVPWM_Duty_Calculation/3', 'autorouting', 'on');
+add_line(modelName, 'DcBusVoltage/1', 'SVPWM_Duty_Calculation/4', 'autorouting', 'on');
+add_line(modelName, 'SVPWM_Duty_Calculation/1', 'DutyA/1', 'autorouting', 'on');
+add_line(modelName, 'SVPWM_Duty_Calculation/2', 'DutyB/1', 'autorouting', 'on');
+add_line(modelName, 'SVPWM_Duty_Calculation/3', 'DutyC/1', 'autorouting', 'on');
+cleanupDanglingLines(modelName);
 end
 
-outputNames = {'DutyA', 'DutyB', 'DutyC', 'IqReference', ...
-    'IdMeasured', 'IqMeasured', 'VdCommand', 'VqCommand'};
-outputY = [235 285 335 80 385 425 465 505];
-for index = 1:numel(outputNames)
-    add_block('simulink/Sinks/Out1', [parent '/' outputNames{index}], ...
-        'Port', num2str(index), 'OutDataTypeStr', 'single', ...
-        'Position', [1910 outputY(index) 1940 outputY(index)+14]);
+function buildHarnessArchitecture(modelName)
+assert(getSimulinkBlockHandle([modelName '/Selectable_PMSM_Plant']) ~= -1, ...
+    'Configure the selectable PMSM plant before rebuilding the FOC harness.');
+resetTopLevelArchitecture(modelName);
+buildTopLevelFocComponents(modelName, true);
+
+setBlockPosition(modelName, 'Speed_Reference_Rpm', [35 70 85 105]);
+setBlockPosition(modelName, 'DC_Bus_48V', [1620 430 1700 465]);
+setBlockPosition(modelName, 'Load_Torque_Nm', [1990 455 2065 490]);
+setBlockPosition(modelName, 'Native_Average_Inverter', [1815 110 1975 260]);
+setBlockPosition(modelName, 'Selectable_PMSM_Plant', [2070 90 2270 320]);
+setBlockPosition(modelName, 'Speed_Mux', [2340 50 2345 110]);
+setBlockPosition(modelName, 'Speed_Scope', [2390 60 2440 100]);
+setBlockPosition(modelName, 'Duty_A_Log', [2335 445 2415 475]);
+setBlockPosition(modelName, 'Iq_Ref_Log', [2335 490 2415 520]);
+setBlockPosition(modelName, 'Speed_Log', [2330 180 2415 210]);
+setBlockPosition(modelName, 'Torque_Log', [2330 270 2415 300]);
+setBlockPosition(modelName, 'Iq_Log', [2330 340 2415 370]);
+
+add_line(modelName, 'Speed_Reference_Rpm/1', 'Speed_PI_Controller_1ms/1', 'autorouting', 'on');
+add_line(modelName, 'Speed_Reference_Rpm/1', 'Speed_Mux/1', 'autorouting', 'on');
+add_line(modelName, 'Selectable_PMSM_Plant/1', 'Speed_PI_Controller_1ms/2', 'autorouting', 'on');
+add_line(modelName, 'Speed_PI_Controller_1ms/1', 'IqRef_Rate_Transition/1', 'autorouting', 'on');
+add_line(modelName, 'IqRef_Rate_Transition/1', 'Q_Axis_Current_PI/1', 'autorouting', 'on');
+add_line(modelName, 'IqRef_Rate_Transition/1', 'Iq_Ref_Log/1', 'autorouting', 'on');
+add_line(modelName, 'Selectable_PMSM_Plant/3', 'Clarke_Transform/1', 'autorouting', 'on');
+add_line(modelName, 'Selectable_PMSM_Plant/4', 'Clarke_Transform/2', 'autorouting', 'on');
+add_line(modelName, 'Clarke_Transform/1', 'Park_Transform/1', 'autorouting', 'on');
+add_line(modelName, 'Clarke_Transform/2', 'Park_Transform/2', 'autorouting', 'on');
+add_line(modelName, 'Selectable_PMSM_Plant/2', 'Park_Transform/3', 'autorouting', 'on');
+add_line(modelName, 'Id_Reference_Zero/1', 'D_Axis_Current_PI/1', 'autorouting', 'on');
+add_line(modelName, 'Park_Transform/1', 'D_Axis_Current_PI/2', 'autorouting', 'on');
+add_line(modelName, 'Park_Transform/2', 'Q_Axis_Current_PI/2', 'autorouting', 'on');
+add_line(modelName, 'Selectable_PMSM_Plant/1', 'DQ_Decoupling_Feedforward/1', 'autorouting', 'on');
+add_line(modelName, 'Park_Transform/1', 'DQ_Decoupling_Feedforward/2', 'autorouting', 'on');
+add_line(modelName, 'Park_Transform/2', 'DQ_Decoupling_Feedforward/3', 'autorouting', 'on');
+add_line(modelName, 'D_Axis_Current_PI/1', 'DQ_Voltage_Command/1', 'autorouting', 'on');
+add_line(modelName, 'Q_Axis_Current_PI/1', 'DQ_Voltage_Command/2', 'autorouting', 'on');
+add_line(modelName, 'DQ_Decoupling_Feedforward/1', 'DQ_Voltage_Command/3', 'autorouting', 'on');
+add_line(modelName, 'DQ_Decoupling_Feedforward/2', 'DQ_Voltage_Command/4', 'autorouting', 'on');
+add_line(modelName, 'DQ_Voltage_Command/1', 'Inverse_Park_Transform/1', 'autorouting', 'on');
+add_line(modelName, 'DQ_Voltage_Command/2', 'Inverse_Park_Transform/2', 'autorouting', 'on');
+add_line(modelName, 'Selectable_PMSM_Plant/2', 'Inverse_Park_Transform/3', 'autorouting', 'on');
+add_line(modelName, 'Inverse_Park_Transform/1', 'Inverse_Clarke_Transform/1', 'autorouting', 'on');
+add_line(modelName, 'Inverse_Park_Transform/2', 'Inverse_Clarke_Transform/2', 'autorouting', 'on');
+add_line(modelName, 'Inverse_Clarke_Transform/1', 'SVPWM_Duty_Calculation/1', 'autorouting', 'on');
+add_line(modelName, 'Inverse_Clarke_Transform/2', 'SVPWM_Duty_Calculation/2', 'autorouting', 'on');
+add_line(modelName, 'Inverse_Clarke_Transform/3', 'SVPWM_Duty_Calculation/3', 'autorouting', 'on');
+add_line(modelName, 'DC_Bus_48V/1', 'SVPWM_Duty_Calculation/4', 'autorouting', 'on');
+for phaseIndex = 1:3
+    add_line(modelName, sprintf('SVPWM_Duty_Calculation/%d', phaseIndex), ...
+        sprintf('Native_Average_Inverter/%d', phaseIndex), 'autorouting', 'on');
+end
+add_line(modelName, 'SVPWM_Duty_Calculation/1', 'Duty_A_Log/1', 'autorouting', 'on');
+add_line(modelName, 'DC_Bus_48V/1', 'Native_Average_Inverter/4', 'autorouting', 'on');
+add_line(modelName, 'Native_Average_Inverter/1', 'Selectable_PMSM_Plant/1', 'autorouting', 'on');
+add_line(modelName, 'Native_Average_Inverter/2', 'Selectable_PMSM_Plant/2', 'autorouting', 'on');
+add_line(modelName, 'Load_Torque_Nm/1', 'Selectable_PMSM_Plant/3', 'autorouting', 'on');
+add_line(modelName, 'Selectable_PMSM_Plant/1', 'Speed_Mux/2', 'autorouting', 'on');
+add_line(modelName, 'Speed_Mux/1', 'Speed_Scope/1', 'autorouting', 'on');
+add_line(modelName, 'Selectable_PMSM_Plant/1', 'Speed_Log/1', 'autorouting', 'on');
+add_line(modelName, 'Selectable_PMSM_Plant/5', 'Torque_Log/1', 'autorouting', 'on');
+add_line(modelName, 'Selectable_PMSM_Plant/7', 'Iq_Log/1', 'autorouting', 'on');
+cleanupDanglingLines(modelName);
 end
 
-addComponent(parent, 'Speed_PI_Controller', [165 45 340 135], ...
-    'yellow', '1 ms speed loop; speed error to limited Iq reference', ...
-    'Ts=FOC_Native_SpeedPeriod | Kp/Ki speed | Iq limit');
-buildSpeedPi([parent '/Speed_PI_Controller']);
+function buildTopLevelFocComponents(parent, isHarness)
+if isHarness
+    speedPosition = [140 45 310 125];
+    transitionPosition = [350 65 470 105];
+    clarkePosition = [350 360 510 455];
+    parkPosition = [565 345 725 460];
+    dPiPosition = [690 205 850 290];
+    qPiPosition = [690 45 850 130];
+    decouplingPosition = [690 505 865 600];
+    voltagePosition = [930 100 1105 300];
+    inverseParkPosition = [1170 120 1330 240];
+    inverseClarkePosition = [1390 120 1550 240];
+    svpwmPosition = [1610 105 1760 255];
+else
+    speedPosition = [110 45 280 125];
+    transitionPosition = [320 65 440 105];
+    clarkePosition = [330 360 490 455];
+    parkPosition = [545 345 705 460];
+    dPiPosition = [670 205 830 290];
+    qPiPosition = [670 45 830 130];
+    decouplingPosition = [670 505 845 600];
+    voltagePosition = [910 100 1085 300];
+    inverseParkPosition = [1150 120 1310 240];
+    inverseClarkePosition = [1370 120 1530 240];
+    svpwmPosition = [1590 105 1740 255];
+end
 
-addComponent(parent, 'Clarke_Transform', [165 205 340 300], ...
-    'lightBlue', 'Two-current Clarke transform: phase currents to alpha/beta', ...
-    'Ialpha=Ia | Ibeta=(Ia+2Ib)/sqrt(3)');
+addTopComponent(parent, 'Speed_PI_Controller_1ms', speedPosition, 'yellow', ...
+    'OUTER SPEED LOOP', 'Task=1 ms | speed error -> limited Iq reference');
+buildSpeedPi([parent '/Speed_PI_Controller_1ms']);
+add_block('simulink/Signal Attributes/Rate Transition', ...
+    [parent '/IqRef_Rate_Transition'], 'OutPortSampleTime', '0.0001', ...
+    'Position', transitionPosition, 'BackgroundColor', 'orange', ...
+    'Description', 'Explicit deterministic transfer from 1 ms speed task to 100 us current task.');
+addTopComponent(parent, 'Clarke_Transform', clarkePosition, 'lightBlue', ...
+    '3s TO 2s CURRENT', 'Task=100 us | Ia/Ib -> Ialpha/Ibeta');
 buildClarke([parent '/Clarke_Transform']);
-
-addComponent(parent, 'Park_Transform', [420 205 595 300], ...
-    'lightBlue', 'Park transform: stationary alpha/beta currents to rotating d/q', ...
-    'Id/Iq from Ialpha/Ibeta and electrical angle');
+addTopComponent(parent, 'Park_Transform', parkPosition, 'lightBlue', ...
+    'STATIONARY TO ROTATING CURRENT', 'Task=100 us | Ialpha/Ibeta + theta -> Id/Iq');
 buildPark([parent '/Park_Transform']);
-
 add_block('simulink/Sources/Constant', [parent '/Id_Reference_Zero'], ...
     'Value', 'single(0.0)', 'OutDataTypeStr', 'single', ...
-    'Position', [630 135 690 165]);
-
-addComponent(parent, 'D_Axis_Current_PI', [690 175 865 265], ...
-    'yellow', '100 us d-axis current PI; regulates Id to zero', ...
-    'Kp/Ki current | integrator limit | Id*=0 A');
+    'Position', [590 230 650 260], 'BackgroundColor', 'white', ...
+    'Description', 'Field-oriented control d-axis current reference: Id*=0 A.');
+addTopComponent(parent, 'D_Axis_Current_PI', dPiPosition, 'yellow', ...
+    'D-AXIS CURRENT PI', 'Task=100 us | Id*=0 A | Kp/Ki + limits');
 buildCurrentPi([parent '/D_Axis_Current_PI'], 'D');
-
-addComponent(parent, 'Q_Axis_Current_PI', [690 290 865 380], ...
-    'yellow', '100 us q-axis current PI; tracks speed-loop Iq reference', ...
-    'Kp/Ki current | integrator limit | Iq*=speed PI');
+addTopComponent(parent, 'Q_Axis_Current_PI', qPiPosition, 'yellow', ...
+    'Q-AXIS CURRENT PI', 'Task=100 us | Iq*=speed loop | Kp/Ki + limits');
 buildCurrentPi([parent '/Q_Axis_Current_PI'], 'Q');
-
-addComponent(parent, 'DQ_Decoupling_Feedforward', [690 430 865 525], ...
-    'orange', 'Cross-coupling and back-EMF feedforward compensation', ...
-    'Pole pairs | Ld/Lq | PM flux | mechanical speed');
+addTopComponent(parent, 'DQ_Decoupling_Feedforward', decouplingPosition, 'orange', ...
+    'D/Q DECOUPLING', 'Task=100 us | omega, Ld/Lq, PM flux feedforward');
 buildDecoupling([parent '/DQ_Decoupling_Feedforward']);
-
-addComponent(parent, 'DQ_Voltage_Command', [950 250 1125 355], ...
-    'white', 'Combine PI and feedforward terms; limit d/q voltage commands', ...
-    'Vd/Vq limit = FOC_Native_VoltageLimit');
+addTopComponent(parent, 'DQ_Voltage_Command', voltagePosition, 'white', ...
+    'D/Q VOLTAGE COMMAND', 'Task=100 us | PI + feedforward + voltage limit');
 buildVoltageCommand([parent '/DQ_Voltage_Command']);
-
-addComponent(parent, 'Inverse_Park_Transform', [1210 250 1385 355], ...
-    'lightBlue', 'Inverse Park transform: rotating d/q voltage to alpha/beta', ...
-    'Valpha/Vbeta from Vd/Vq and electrical angle');
+addTopComponent(parent, 'Inverse_Park_Transform', inverseParkPosition, 'lightBlue', ...
+    '2r TO 2s', 'Task=100 us | Vd/Vq -> Valpha/Vbeta');
 buildInversePark([parent '/Inverse_Park_Transform']);
-
-addComponent(parent, 'Inverse_Clarke_Transform', [1470 250 1645 355], ...
-    'lightBlue', 'Inverse Clarke transform: alpha/beta voltage to phase A/B/C', ...
-    'Va=Valpha | Vb/Vc=-0.5Valpha +/- sqrt(3)/2 Vbeta');
+addTopComponent(parent, 'Inverse_Clarke_Transform', inverseClarkePosition, 'lightBlue', ...
+    '2s TO 3s', 'Task=100 us | Valpha/Vbeta -> Va/Vb/Vc');
 buildInverseClarke([parent '/Inverse_Clarke_Transform']);
-
-addComponent(parent, 'SVPWM_Duty_Calculation', [1715 230 1885 365], ...
-    'cyan', 'Common-mode injected SVPWM and three-phase duty limiting', ...
-    'Vdc scaling | duty range FOC_Native_DutyMin/Max');
+addTopComponent(parent, 'SVPWM_Duty_Calculation', svpwmPosition, 'cyan', ...
+    'SVPWM', 'Task=100 us | phase voltage + Vdc -> Duty A/B/C');
 buildSvpwm([parent '/SVPWM_Duty_Calculation']);
+end
 
-addNote(parent, ['FOC CONTROL PIPELINE - explicit component boundaries\n' ...
-    'Current loop and transforms: 100 us | Speed loop: 1 ms | Numeric type: single'], ...
-    [570 15 1450 70], 13, 'blue', 'lightBlue');
-addNote(parent, ['Signal flow: currents -> Clarke -> Park -> PI + decoupling -> ' ...
-    'inverse Park -> inverse Clarke -> SVPWM'], ...
-    [580 555 1510 600], 11, 'black', 'white');
+function resetTopLevelArchitecture(parent)
+lineHandles = find_system(parent, 'FindAll', 'on', 'SearchDepth', 1, 'Type', 'line');
+for index = 1:numel(lineHandles)
+    try
+        delete_line(lineHandles(index));
+    catch
+    end
+end
+blockNames = {'Native_FOC_Controller_100us', 'Speed_PI_Controller_1ms', ...
+    'IqRef_Rate_Transition', 'Current_Control_100us', 'Id_Reference_Zero', ...
+    'Clarke_Transform', 'Park_Transform', 'D_Axis_Current_PI', ...
+    'Q_Axis_Current_PI', 'DQ_Decoupling_Feedforward', ...
+    'DQ_Voltage_Command', 'Inverse_Park_Transform', ...
+    'Inverse_Clarke_Transform', 'SVPWM_Duty_Calculation'};
+for index = 1:numel(blockNames)
+    path = [parent '/' blockNames{index}];
+    if getSimulinkBlockHandle(path) ~= -1
+        delete_block(path);
+    end
+end
+end
 
-add_line(parent, 'SpeedReferenceRpm/1', 'Speed_PI_Controller/1', 'autorouting', 'on');
-add_line(parent, 'SpeedRpm/1', 'Speed_PI_Controller/2', 'autorouting', 'on');
-add_line(parent, 'Speed_PI_Controller/1', 'Q_Axis_Current_PI/1', 'autorouting', 'on');
-add_line(parent, 'Speed_PI_Controller/1', 'IqReference/1', 'autorouting', 'on');
+function cleanupDanglingLines(parent)
+lineHandles = find_system(parent, 'FindAll', 'on', 'SearchDepth', 1, 'Type', 'line');
+for index = 1:numel(lineHandles)
+    try
+        sourcePort = get_param(lineHandles(index), 'SrcPortHandle');
+        destinationPorts = get_param(lineHandles(index), 'DstPortHandle');
+        if isempty(sourcePort) || sourcePort == -1 || isempty(destinationPorts) || ...
+                any(destinationPorts == -1)
+            delete_line(lineHandles(index));
+        end
+    catch
+    end
+end
+end
 
-add_line(parent, 'Ia/1', 'Clarke_Transform/1', 'autorouting', 'on');
-add_line(parent, 'Ib/1', 'Clarke_Transform/2', 'autorouting', 'on');
-add_line(parent, 'Clarke_Transform/1', 'Park_Transform/1', 'autorouting', 'on');
-add_line(parent, 'Clarke_Transform/2', 'Park_Transform/2', 'autorouting', 'on');
-add_line(parent, 'ThetaElectrical/1', 'Park_Transform/3', 'autorouting', 'on');
+function addTopComponent(parent, name, position, color, titleText, taskText)
+addComponent(parent, name, position, color, titleText, taskText);
+set_param([parent '/' name], 'AttributesFormatString', ...
+    sprintf('%s\n%s', titleText, taskText));
+end
 
-add_line(parent, 'Id_Reference_Zero/1', 'D_Axis_Current_PI/1', 'autorouting', 'on');
-add_line(parent, 'Park_Transform/1', 'D_Axis_Current_PI/2', 'autorouting', 'on');
-add_line(parent, 'Park_Transform/2', 'Q_Axis_Current_PI/2', 'autorouting', 'on');
-add_line(parent, 'Park_Transform/1', 'IdMeasured/1', 'autorouting', 'on');
-add_line(parent, 'Park_Transform/2', 'IqMeasured/1', 'autorouting', 'on');
-
-add_line(parent, 'SpeedRpm/1', 'DQ_Decoupling_Feedforward/1', 'autorouting', 'on');
-add_line(parent, 'Park_Transform/1', 'DQ_Decoupling_Feedforward/2', 'autorouting', 'on');
-add_line(parent, 'Park_Transform/2', 'DQ_Decoupling_Feedforward/3', 'autorouting', 'on');
-
-add_line(parent, 'D_Axis_Current_PI/1', 'DQ_Voltage_Command/1', 'autorouting', 'on');
-add_line(parent, 'Q_Axis_Current_PI/1', 'DQ_Voltage_Command/2', 'autorouting', 'on');
-add_line(parent, 'DQ_Decoupling_Feedforward/1', 'DQ_Voltage_Command/3', 'autorouting', 'on');
-add_line(parent, 'DQ_Decoupling_Feedforward/2', 'DQ_Voltage_Command/4', 'autorouting', 'on');
-add_line(parent, 'DQ_Voltage_Command/1', 'VdCommand/1', 'autorouting', 'on');
-add_line(parent, 'DQ_Voltage_Command/2', 'VqCommand/1', 'autorouting', 'on');
-
-add_line(parent, 'DQ_Voltage_Command/1', 'Inverse_Park_Transform/1', 'autorouting', 'on');
-add_line(parent, 'DQ_Voltage_Command/2', 'Inverse_Park_Transform/2', 'autorouting', 'on');
-add_line(parent, 'ThetaElectrical/1', 'Inverse_Park_Transform/3', 'autorouting', 'on');
-add_line(parent, 'Inverse_Park_Transform/1', 'Inverse_Clarke_Transform/1', 'autorouting', 'on');
-add_line(parent, 'Inverse_Park_Transform/2', 'Inverse_Clarke_Transform/2', 'autorouting', 'on');
-add_line(parent, 'Inverse_Clarke_Transform/1', 'SVPWM_Duty_Calculation/1', 'autorouting', 'on');
-add_line(parent, 'Inverse_Clarke_Transform/2', 'SVPWM_Duty_Calculation/2', 'autorouting', 'on');
-add_line(parent, 'Inverse_Clarke_Transform/3', 'SVPWM_Duty_Calculation/3', 'autorouting', 'on');
-add_line(parent, 'Vdc/1', 'SVPWM_Duty_Calculation/4', 'autorouting', 'on');
-add_line(parent, 'SVPWM_Duty_Calculation/1', 'DutyA/1', 'autorouting', 'on');
-add_line(parent, 'SVPWM_Duty_Calculation/2', 'DutyB/1', 'autorouting', 'on');
-add_line(parent, 'SVPWM_Duty_Calculation/3', 'DutyC/1', 'autorouting', 'on');
-restoreExternalConnections(parent, externalConnections);
+function setBlockPosition(parent, name, position)
+path = [parent '/' name];
+if getSimulinkBlockHandle(path) ~= -1
+    set_param(path, 'Position', position);
+end
 end
 
 function buildClarke(parent)
@@ -246,8 +362,6 @@ add_block('simulink/Discrete/Unit Delay', [parent '/Integrator_State'], ...
 addSum(parent, 'Iq_Reference_Sum', '++', [520 120 550 180]);
 addSaturation(parent, 'Iq_Reference_Limit', '-FOC_Native_IqLimit', ...
     'FOC_Native_IqLimit', [590 130 660 175]);
-add_block('simulink/Discrete/Zero-Order Hold', [parent '/IqRef_100us'], ...
-    'SampleTime', '0.0001', 'Position', [670 130 735 160]);
 add_line(parent, 'SpeedReferenceRpm/1', 'SpeedRef_1ms/1', 'autorouting', 'on');
 add_line(parent, 'SpeedRpm/1', 'SpeedFb_1ms/1', 'autorouting', 'on');
 add_line(parent, 'SpeedRef_1ms/1', 'Speed_Error/1', 'autorouting', 'on');
@@ -262,12 +376,11 @@ add_line(parent, 'Integrator_Limit/1', 'Integrator_State/1', 'autorouting', 'on'
 add_line(parent, 'Kp/1', 'Iq_Reference_Sum/1', 'autorouting', 'on');
 add_line(parent, 'Integrator_State/1', 'Iq_Reference_Sum/2', 'autorouting', 'on');
 add_line(parent, 'Iq_Reference_Sum/1', 'Iq_Reference_Limit/1', 'autorouting', 'on');
-add_line(parent, 'Iq_Reference_Limit/1', 'IqRef_100us/1', 'autorouting', 'on');
-add_line(parent, 'IqRef_100us/1', 'IqReference/1', 'autorouting', 'on');
+add_line(parent, 'Iq_Reference_Limit/1', 'IqReference/1', 'autorouting', 'on');
 addNote(parent, ['RESPONSIBILITY: outer speed PI loop\n' ...
     'Ts=FOC_Native_SpeedPeriod (1 ms)\n' ...
     'Kp=FOC_Native_KpSpeed; Ki=FOC_Native_KiSpeed\n' ...
-    'Output limit: +/-FOC_Native_IqLimit; resampled to 100 us'], ...
+    'Output limit: +/-FOC_Native_IqLimit; output remains at 1 ms'], ...
     [80 15 690 95], 11, 'green', 'yellow');
 end
 
