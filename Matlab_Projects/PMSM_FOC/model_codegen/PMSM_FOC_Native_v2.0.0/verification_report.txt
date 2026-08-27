@@ -1,0 +1,19 @@
+PMSM FOC Native Simulink v2.0.0 verification
+Controller model: PMSM_FOC_Native_Controller_v20
+Closed-loop model: PMSM_FOC_Native_ClosedLoop_v20
+Total blocks inspected: 290
+Forbidden blocks: 0
+Final speed rpm: 993.090393
+Maximum speed rpm: 1084.07068
+Maximum abs Iq A: 2.13765693
+Duty A minimum: 0.0852309167
+Duty A maximum: 0.914757848
+Final torque Nm: 0.204401806
+Simulation pass: 1
+ERT step entry point: 1
+ERT initialize entry point: 1
+Input interface present: 1
+Output interface present: 1
+Generated trig control math present: 1
+Generated S-Function text present: 0
+Code verification pass: 1
