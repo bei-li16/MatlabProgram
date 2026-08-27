@@ -7,6 +7,7 @@
 - `PMSM_FOC_DualPlant_ClosedLoop_v21.slx`：闭环仿真顶层模型。
 - `PMSM_FOC_DualPlant_Controller_v21.slx`：可独立生成 ERT C 代码的控制器模型。
 - `build_pmsm_foc_dualplant_v21.m`：配置模型、依次仿真两个电机对象、绘图、导出架构图、生成代码并写入验收报告。
+- `refactor_pmsm_foc_controller_v21.m`：在两个 v2.1.0 模型中重建组件化 FOC 控制器，并在重构前后保护上层端口连线。
 - `switch_pmsm_plant_v21.m`：停止仿真时切换 Variant 选择。
 - `verification_report.txt`：最近一次自动验收数据。
 - `PMSM_FOC_DualPlant_v21_results.png`：关键曲线对比。
@@ -35,7 +36,28 @@
 
 ![双电机 Variant 架构](PMSM_FOC_DualPlant_v21_plant_variants.png)
 
-FOC 控制器包含 Clarke/Park 变换、1 ms 速度 PI 环、100 us d/q 电流 PI 环、交叉耦合前馈、逆 Park 变换、公共模注入 SVPWM 和三相占空比限幅。两个电机对象的公共接口为：
+### FOC 控制组件及责任边界
+
+控制器不再把所有计算平铺在同一个子系统中，而是拆分为 10 个可独立打开、检查和维护的组件。顶层只表达组件间的数据流；每个组件内部均包含职责、公式、采样周期、参数名和限幅说明，块的 `Description` 中也保留同样的参数摘要。
+
+![组件化 FOC 控制器架构](PMSM_FOC_DualPlant_v21_controller_architecture.png)
+
+| 组件 | 单一责任 | 主要接口 | 关键参数或约束 |
+| --- | --- | --- | --- |
+| `Speed_PI_Controller` | 将速度误差转换为 q 轴电流给定 | `SpeedReferenceRpm`, `SpeedRpm` → `IqReference` | 1 ms；`FOC_Native_KpSpeed`、`FOC_Native_KiSpeed`；±`FOC_Native_IqLimit` |
+| `Clarke_Transform` | 两相采样电流转换到静止 α/β 坐标系 | `Ia`, `Ib` → `Ialpha`, `Ibeta` | `Ialpha=Ia`；`Ibeta=(Ia+2Ib)/sqrt(3)` |
+| `Park_Transform` | α/β 电流转换到旋转 d/q 坐标系 | `Ialpha`, `Ibeta`, `ThetaElectrical` → `Id`, `Iq` | 正弦/余弦角度变换；100 us 数据通路 |
+| `D_Axis_Current_PI` | 将 d 轴电流调节到 0 A | `Reference=0`, `Id` → `VdPI` | 100 us；电流 PI 参数；积分器限幅 ±30 |
+| `Q_Axis_Current_PI` | 跟踪速度环给出的 q 轴电流 | `IqReference`, `Iq` → `VqPI` | 100 us；电流 PI 参数；积分器限幅 ±30 |
+| `DQ_Decoupling_Feedforward` | 补偿 d/q 轴交叉耦合与反电动势 | `SpeedRpm`, `Id`, `Iq` → `VdFeedforward`, `VqFeedforward` | 极对数、`Ld`、`Lq`、永磁磁链 |
+| `DQ_Voltage_Command` | 合并 PI 与前馈项并形成有界电压指令 | PI/前馈电压 → `VdCommand`, `VqCommand` | d/q 轴分别限幅至 ±26 V |
+| `Inverse_Park_Transform` | d/q 电压转换回静止 α/β 坐标系 | `Vd`, `Vq`, `ThetaElectrical` → `Valpha`, `Vbeta` | 与 Park 变换采用同一电角度约定 |
+| `Inverse_Clarke_Transform` | α/β 电压转换为三相电压 | `Valpha`, `Vbeta` → `Va`, `Vb`, `Vc` | `Va=Valpha`；B/C 相使用 ±`sqrt(3)/2` |
+| `SVPWM_Duty_Calculation` | 公共模注入、母线归一化和占空比限幅 | `Va`, `Vb`, `Vc`, `Vdc` → `DutyA/B/C` | `Voffset=-0.5(max+min)`；占空比 0.02～0.98 |
+
+组件边界保持为虚拟子系统，使 1 ms 速度环和 100 us 电流环继续沿用原有多速率调度；控制器外部 6 输入/8 输出接口保持不变。重构脚本会捕获并恢复上一级连线，同时修复历史重构可能留下的悬空线，避免组件化过程改变闭环行为。
+
+两个电机对象的公共接口为：
 
 | 方向 | 信号 | 含义 |
 | --- | --- | --- |
@@ -114,6 +136,6 @@ MathWorks 分支将 α/β 电压转换为三相电压后送入官方 `mcbhdlplan
 build_pmsm_foc_dualplant_v21
 ```
 
-脚本会依次验证两个被控对象、刷新三幅 PNG 文档图、重建控制器 ERT C 代码并更新 `verification_report.txt`。生成 C 代码的目标仅为控制器模型；两个 PMSM 被控对象属于仿真环境，不进入控制器目标代码。
+脚本会依次验证两个被控对象、刷新四幅 PNG 文档图、核对 10 个控制组件及上下层接口连线、重建控制器 ERT C 代码并更新 `verification_report.txt`。生成 C 代码的目标仅为控制器模型；两个 PMSM 被控对象属于仿真环境，不进入控制器目标代码。
 
 所需产品包括 Simulink、Motor Control Blockset、Simulink Coder 和 Embedded Coder。

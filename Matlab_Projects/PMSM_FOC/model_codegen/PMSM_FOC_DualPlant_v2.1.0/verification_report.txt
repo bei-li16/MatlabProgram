@@ -8,6 +8,12 @@ MathWorks reference: mcbhdlplantlib/PMSM HDL
 MathWorks reference verified: 1
 Callback button present: 1
 One-click switch link present: 1
+FOC component count: 10
+Controller components present: 1
+Harness components present: 1
+Controller boundary connections (in/out): 6/8
+Harness boundary connections (in/out): 6/4
+Component architecture verification pass: 1
 Native final speed rpm: 993.090393
 Native maximum speed rpm: 1084.07068
 Native maximum abs Iq A: 2.13765693

@@ -39,6 +39,7 @@ load_system('simulink_hmi_blocks');
 load_system(controllerFile);
 load_system(harnessFile);
 
+refactor_pmsm_foc_controller_v21;
 configureDualPlantHarness(harnessName, harnessFile, versionDirectory);
 
 nativeOutput = simulatePlant(harnessName, 1);
@@ -58,7 +59,7 @@ fprintf('CODEX_DUAL_MCB_MAX_ABS_IQ_A=%.9g\n', mcbMetrics.MaximumAbsIqA);
 fprintf('CODEX_DUAL_MCB_PASS=%d\n', mcbPass);
 
 createComparisonPlot(nativeOutput, mcbOutput, versionDirectory);
-exportArchitectureImages(harnessName, versionDirectory);
+exportArchitectureImages(controllerName, harnessName, versionDirectory);
 if ~(nativePass && mcbPass)
     error('At least one PMSM plant choice failed the closed-loop limits.');
 end
@@ -69,12 +70,16 @@ save_system(harnessName, harnessFile);
 slbuild(controllerName);
 codeReport = inspectGeneratedControllerCode(controllerName, versionDirectory);
 variantReport = inspectVariantStructure(harnessName);
+architectureReport = inspectControllerArchitecture(controllerName, harnessName);
 writeVerificationReport(versionDirectory, controllerName, harnessName, ...
-    nativeMetrics, mcbMetrics, nativePass, mcbPass, variantReport, codeReport);
+    nativeMetrics, mcbMetrics, nativePass, mcbPass, variantReport, ...
+    architectureReport, codeReport);
 
 fprintf('CODEX_DUAL_VARIANT_CHOICES=%d\n', variantReport.ChoiceCount);
 fprintf('CODEX_DUAL_MCB_REFERENCE_OK=%d\n', variantReport.McbReferencePresent);
 fprintf('CODEX_DUAL_ONE_CLICK_LINK=%d\n', variantReport.OneClickLinkPresent);
+fprintf('CODEX_DUAL_FOC_COMPONENTS=%d\n', architectureReport.ComponentCount);
+fprintf('CODEX_DUAL_ARCHITECTURE_PASS=%d\n', architectureReport.Pass);
 fprintf('CODEX_DUAL_CODE_PASS=%d\n', codeReport.Pass);
 fprintf('CODEX_DUAL_DEFAULT_SELECTION=2\n');
 
@@ -403,17 +408,22 @@ exportgraphics(figureHandle, fullfile(versionDirectory, ...
 close(figureHandle);
 end
 
-function exportArchitectureImages(modelName, versionDirectory)
+function exportArchitectureImages(controllerName, modelName, versionDirectory)
 overviewPath = fullfile(versionDirectory, ...
     'PMSM_FOC_DualPlant_v21_architecture.png');
 plantPath = [modelName '/Selectable_PMSM_Plant'];
 plantImagePath = fullfile(versionDirectory, ...
     'PMSM_FOC_DualPlant_v21_plant_variants.png');
+controllerPath = [controllerName '/Native_FOC_Controller_100us'];
+controllerImagePath = fullfile(versionDirectory, ...
+    'PMSM_FOC_DualPlant_v21_controller_architecture.png');
 
 open_system(modelName);
 print(['-s' modelName], '-dpng', '-r160', overviewPath);
 open_system(plantPath);
 print(['-s' plantPath], '-dpng', '-r160', plantImagePath);
+open_system(controllerPath);
+print(['-s' controllerPath], '-dpng', '-r180', controllerImagePath);
 end
 
 function report = inspectVariantStructure(modelName)
@@ -460,8 +470,42 @@ report.Pass = report.HasStep && report.HasInitialize && report.HasInputs && ...
     report.HasOutputs && ~report.HasSFunction;
 end
 
+function report = inspectControllerArchitecture(controllerName, harnessName)
+componentNames = {'Speed_PI_Controller', 'Clarke_Transform', ...
+    'Park_Transform', 'D_Axis_Current_PI', 'Q_Axis_Current_PI', ...
+    'DQ_Decoupling_Feedforward', 'DQ_Voltage_Command', ...
+    'Inverse_Park_Transform', 'Inverse_Clarke_Transform', ...
+    'SVPWM_Duty_Calculation'};
+controllerPath = [controllerName '/Native_FOC_Controller_100us'];
+harnessPath = [harnessName '/Native_FOC_Controller_100us'];
+report.ComponentCount = numel(componentNames);
+report.ControllerComponentsPresent = all(cellfun(@(name) ...
+    getSimulinkBlockHandle([controllerPath '/' name]) ~= -1, componentNames));
+report.HarnessComponentsPresent = all(cellfun(@(name) ...
+    getSimulinkBlockHandle([harnessPath '/' name]) ~= -1, componentNames));
+[report.ControllerInputsConnected, report.ControllerOutputsConnected] = ...
+    countBoundaryConnections(controllerPath);
+[report.HarnessInputsConnected, report.HarnessOutputsConnected] = ...
+    countBoundaryConnections(harnessPath);
+report.Pass = report.ControllerComponentsPresent && ...
+    report.HarnessComponentsPresent && ...
+    report.ControllerInputsConnected == 6 && ...
+    report.ControllerOutputsConnected == 8 && ...
+    report.HarnessInputsConnected == 6 && ...
+    report.HarnessOutputsConnected == 4;
+end
+
+function [inputCount, outputCount] = countBoundaryConnections(subsystemPath)
+portHandles = get_param(subsystemPath, 'PortHandles');
+inputCount = sum(arrayfun(@(portHandle) ...
+    get_param(portHandle, 'Line') ~= -1, portHandles.Inport));
+outputCount = sum(arrayfun(@(portHandle) ...
+    get_param(portHandle, 'Line') ~= -1, portHandles.Outport));
+end
+
 function writeVerificationReport(versionDirectory, controllerName, harnessName, ...
-        nativeMetrics, mcbMetrics, nativePass, mcbPass, variantReport, codeReport)
+        nativeMetrics, mcbMetrics, nativePass, mcbPass, variantReport, ...
+        architectureReport, codeReport)
 reportPath = fullfile(versionDirectory, 'verification_report.txt');
 reportHandle = fopen(reportPath, 'w');
 assert(reportHandle ~= -1, 'Unable to create verification report.');
@@ -476,6 +520,19 @@ fprintf(reportHandle, 'MathWorks reference: %s\n', variantReport.McbReference);
 fprintf(reportHandle, 'MathWorks reference verified: %d\n', variantReport.McbReferencePresent);
 fprintf(reportHandle, 'Callback button present: %d\n', variantReport.CallbackButtonPresent);
 fprintf(reportHandle, 'One-click switch link present: %d\n', variantReport.OneClickLinkPresent);
+fprintf(reportHandle, 'FOC component count: %d\n', architectureReport.ComponentCount);
+fprintf(reportHandle, 'Controller components present: %d\n', ...
+    architectureReport.ControllerComponentsPresent);
+fprintf(reportHandle, 'Harness components present: %d\n', ...
+    architectureReport.HarnessComponentsPresent);
+fprintf(reportHandle, 'Controller boundary connections (in/out): %d/%d\n', ...
+    architectureReport.ControllerInputsConnected, ...
+    architectureReport.ControllerOutputsConnected);
+fprintf(reportHandle, 'Harness boundary connections (in/out): %d/%d\n', ...
+    architectureReport.HarnessInputsConnected, ...
+    architectureReport.HarnessOutputsConnected);
+fprintf(reportHandle, 'Component architecture verification pass: %d\n', ...
+    architectureReport.Pass);
 writeMetrics(reportHandle, 'Native', nativeMetrics, nativePass);
 writeMetrics(reportHandle, 'MathWorks MCB PMSM HDL', mcbMetrics, mcbPass);
 fprintf(reportHandle, 'ERT step present: %d\n', codeReport.HasStep);

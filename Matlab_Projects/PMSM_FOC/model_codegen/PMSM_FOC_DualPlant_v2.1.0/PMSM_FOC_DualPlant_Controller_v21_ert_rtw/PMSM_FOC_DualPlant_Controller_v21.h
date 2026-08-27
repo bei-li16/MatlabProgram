@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'PMSM_FOC_DualPlant_Controller_v21'.
  *
- * Model version                  : 1.3
+ * Model version                  : 1.11
  * Simulink Coder version         : 24.1 (R2024a) 19-Nov-2023
- * C/C++ source code generated on : Thu Aug 27 09:44:33 2026
+ * C/C++ source code generated on : Thu Aug 27 15:35:17 2026
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: Intel->x86-64 (Windows64)
@@ -33,14 +33,14 @@
 
 /* Block signals (default storage) */
 typedef struct {
-  real32_T Iq_Reference_Limit;         /* '<S1>/Iq_Reference_Limit' */
+  real32_T Iq_Reference_Limit;         /* '<S11>/Iq_Reference_Limit' */
 } B_PMSM_FOC_DualPlant_Controll_T;
 
 /* Block states (default storage) for system '<Root>' */
 typedef struct {
-  real32_T Speed_Integrator_State_DSTATE;/* '<S1>/Speed_Integrator_State' */
-  real32_T Iq_Integrator_State_DSTATE; /* '<S1>/Iq_Integrator_State' */
-  real32_T Id_Integrator_State_DSTATE; /* '<S1>/Id_Integrator_State' */
+  real32_T Integrator_State_DSTATE;    /* '<S5>/Integrator_State' */
+  real32_T Integrator_State_DSTATE_m;  /* '<S11>/Integrator_State' */
+  real32_T Integrator_State_DSTATE_o;  /* '<S9>/Integrator_State' */
 } DW_PMSM_FOC_DualPlant_Control_T;
 
 /* External inputs (root inport signals with default storage) */
@@ -68,47 +68,47 @@ typedef struct {
 /* Parameters (default storage) */
 struct P_PMSM_FOC_DualPlant_Controll_T_ {
   real32_T NATIVE_INV_SQRT3;           /* Variable: NATIVE_INV_SQRT3
-                                        * Referenced by: '<S1>/InvSqrt3'
+                                        * Referenced by: '<S2>/InvSqrt3'
                                         */
   real32_T NATIVE_RPM_TO_RAD_S;        /* Variable: NATIVE_RPM_TO_RAD_S
                                         * Referenced by:
-                                        *   '<S1>/Electrical_Speed'
-                                        *   '<S1>/Speed_RpmToRad'
+                                        *   '<S3>/Electrical_Speed'
+                                        *   '<S11>/RpmToRad'
                                         */
   real32_T NATIVE_SQRT3_BY2;           /* Variable: NATIVE_SQRT3_BY2
                                         * Referenced by:
-                                        *   '<S1>/Vb_Beta'
-                                        *   '<S1>/Vc_Beta'
+                                        *   '<S6>/Vb_Beta'
+                                        *   '<S6>/Vc_Beta'
                                         */
-  real32_T Ib_x2_Gain;                 /* Expression: single(2.0)
-                                        * Referenced by: '<S1>/Ib_x2'
-                                        */
-  real32_T Iq_Negative_Gain;           /* Expression: single(-1.0)
-                                        * Referenced by: '<S1>/Iq_Negative'
-                                        */
-  real32_T Speed_Integrator_State_InitialC;/* Expression: single(0.0)
-                                            * Referenced by: '<S1>/Speed_Integrator_State'
-                                            */
-  real32_T Iq_Integrator_State_InitialCond;/* Expression: single(0.0)
-                                            * Referenced by: '<S1>/Iq_Integrator_State'
-                                            */
   real32_T Id_Reference_Zero_Value;    /* Expression: single(0.0)
                                         * Referenced by: '<S1>/Id_Reference_Zero'
                                         */
-  real32_T Id_Integrator_State_InitialCond;/* Expression: single(0.0)
-                                            * Referenced by: '<S1>/Id_Integrator_State'
+  real32_T Ib_x2_Gain;                 /* Expression: single(2.0)
+                                        * Referenced by: '<S2>/Ib_x2'
+                                        */
+  real32_T Integrator_State_InitialConditi;/* Expression: single(0.0)
+                                            * Referenced by: '<S5>/Integrator_State'
+                                            */
+  real32_T Negative_Gain;              /* Expression: single(-1.0)
+                                        * Referenced by: '<S8>/Negative'
+                                        */
+  real32_T Integrator_State_InitialCondi_g;/* Expression: single(0.0)
+                                            * Referenced by: '<S11>/Integrator_State'
+                                            */
+  real32_T Integrator_State_InitialCondi_b;/* Expression: single(0.0)
+                                            * Referenced by: '<S9>/Integrator_State'
                                             */
   real32_T Vb_Alpha_Gain;              /* Expression: single(-0.5)
-                                        * Referenced by: '<S1>/Vb_Alpha'
+                                        * Referenced by: '<S6>/Vb_Alpha'
                                         */
   real32_T Vc_Alpha_Gain;              /* Expression: single(-0.5)
-                                        * Referenced by: '<S1>/Vc_Alpha'
+                                        * Referenced by: '<S6>/Vc_Alpha'
                                         */
   real32_T Common_Mode_Gain;           /* Expression: single(-0.5)
-                                        * Referenced by: '<S1>/Common_Mode'
+                                        * Referenced by: '<S10>/Common_Mode'
                                         */
   real32_T Duty_Half_Value;            /* Expression: single(0.5)
-                                        * Referenced by: '<S1>/Duty_Half'
+                                        * Referenced by: '<S10>/Duty_Half'
                                         */
 };
 
@@ -154,66 +154,66 @@ extern ExtY_PMSM_FOC_DualPlant_Contr_T PMSM_FOC_DualPlant_Controller_Y;
 extern real32_T FOC_Native_CurrentIntegratorLimit;
                                   /* Variable: FOC_Native_CurrentIntegratorLimit
                                    * Referenced by:
-                                   *   '<S1>/Id_Integrator_Limit'
-                                   *   '<S1>/Iq_Integrator_Limit'
+                                   *   '<S5>/Integrator_Limit'
+                                   *   '<S9>/Integrator_Limit'
                                    */
 extern real32_T FOC_Native_CurrentPeriod;/* Variable: FOC_Native_CurrentPeriod
                                           * Referenced by:
-                                          *   '<S1>/Id_KiTs'
-                                          *   '<S1>/Iq_KiTs'
+                                          *   '<S5>/KiTs'
+                                          *   '<S9>/KiTs'
                                           */
 extern real32_T FOC_Native_DutyMax;    /* Variable: FOC_Native_DutyMax
                                         * Referenced by:
-                                        *   '<S1>/Duty_A_Limit'
-                                        *   '<S1>/Duty_B_Limit'
-                                        *   '<S1>/Duty_C_Limit'
+                                        *   '<S10>/Duty_A_Limit'
+                                        *   '<S10>/Duty_B_Limit'
+                                        *   '<S10>/Duty_C_Limit'
                                         */
 extern real32_T FOC_Native_DutyMin;    /* Variable: FOC_Native_DutyMin
                                         * Referenced by:
-                                        *   '<S1>/Duty_A_Limit'
-                                        *   '<S1>/Duty_B_Limit'
-                                        *   '<S1>/Duty_C_Limit'
+                                        *   '<S10>/Duty_A_Limit'
+                                        *   '<S10>/Duty_B_Limit'
+                                        *   '<S10>/Duty_C_Limit'
                                         */
 extern real32_T FOC_Native_FluxPM;     /* Variable: FOC_Native_FluxPM
-                                        * Referenced by: '<S1>/Flux_PM'
+                                        * Referenced by: '<S3>/Flux_PM'
                                         */
 extern real32_T FOC_Native_IqLimit;    /* Variable: FOC_Native_IqLimit
                                         * Referenced by:
-                                        *   '<S1>/Iq_Reference_Limit'
-                                        *   '<S1>/Speed_Integrator_Limit'
+                                        *   '<S11>/Integrator_Limit'
+                                        *   '<S11>/Iq_Reference_Limit'
                                         */
 extern real32_T FOC_Native_KiCurrent;  /* Variable: FOC_Native_KiCurrent
                                         * Referenced by:
-                                        *   '<S1>/Id_KiTs'
-                                        *   '<S1>/Iq_KiTs'
+                                        *   '<S5>/KiTs'
+                                        *   '<S9>/KiTs'
                                         */
 extern real32_T FOC_Native_KiSpeed;    /* Variable: FOC_Native_KiSpeed
-                                        * Referenced by: '<S1>/Speed_KiTs'
+                                        * Referenced by: '<S11>/KiTs'
                                         */
 extern real32_T FOC_Native_KpCurrent;  /* Variable: FOC_Native_KpCurrent
                                         * Referenced by:
-                                        *   '<S1>/Id_Kp'
-                                        *   '<S1>/Iq_Kp'
+                                        *   '<S5>/Kp'
+                                        *   '<S9>/Kp'
                                         */
 extern real32_T FOC_Native_KpSpeed;    /* Variable: FOC_Native_KpSpeed
-                                        * Referenced by: '<S1>/Speed_Kp'
+                                        * Referenced by: '<S11>/Kp'
                                         */
 extern real32_T FOC_Native_Ld;         /* Variable: FOC_Native_Ld
-                                        * Referenced by: '<S1>/Ld_x_Id'
+                                        * Referenced by: '<S3>/Ld_x_Id'
                                         */
 extern real32_T FOC_Native_Lq;         /* Variable: FOC_Native_Lq
-                                        * Referenced by: '<S1>/D_Decoupling'
+                                        * Referenced by: '<S3>/D_Decoupling'
                                         */
 extern real32_T FOC_Native_PolePairs;  /* Variable: FOC_Native_PolePairs
-                                        * Referenced by: '<S1>/Electrical_Speed'
+                                        * Referenced by: '<S3>/Electrical_Speed'
                                         */
 extern real32_T FOC_Native_SpeedPeriod;/* Variable: FOC_Native_SpeedPeriod
-                                        * Referenced by: '<S1>/Speed_KiTs'
+                                        * Referenced by: '<S11>/KiTs'
                                         */
 extern real32_T FOC_Native_VoltageLimit;/* Variable: FOC_Native_VoltageLimit
                                          * Referenced by:
-                                         *   '<S1>/Vd_Limit'
-                                         *   '<S1>/Vq_Limit'
+                                         *   '<S4>/Vd_Limit'
+                                         *   '<S4>/Vq_Limit'
                                          */
 
 /* Model entry point functions */
@@ -240,6 +240,16 @@ extern RT_MODEL_PMSM_FOC_DualPlant_C_T *const PMSM_FOC_DualPlant_Controlle_M;
  *
  * '<Root>' : 'PMSM_FOC_DualPlant_Controller_v21'
  * '<S1>'   : 'PMSM_FOC_DualPlant_Controller_v21/Native_FOC_Controller_100us'
+ * '<S2>'   : 'PMSM_FOC_DualPlant_Controller_v21/Native_FOC_Controller_100us/Clarke_Transform'
+ * '<S3>'   : 'PMSM_FOC_DualPlant_Controller_v21/Native_FOC_Controller_100us/DQ_Decoupling_Feedforward'
+ * '<S4>'   : 'PMSM_FOC_DualPlant_Controller_v21/Native_FOC_Controller_100us/DQ_Voltage_Command'
+ * '<S5>'   : 'PMSM_FOC_DualPlant_Controller_v21/Native_FOC_Controller_100us/D_Axis_Current_PI'
+ * '<S6>'   : 'PMSM_FOC_DualPlant_Controller_v21/Native_FOC_Controller_100us/Inverse_Clarke_Transform'
+ * '<S7>'   : 'PMSM_FOC_DualPlant_Controller_v21/Native_FOC_Controller_100us/Inverse_Park_Transform'
+ * '<S8>'   : 'PMSM_FOC_DualPlant_Controller_v21/Native_FOC_Controller_100us/Park_Transform'
+ * '<S9>'   : 'PMSM_FOC_DualPlant_Controller_v21/Native_FOC_Controller_100us/Q_Axis_Current_PI'
+ * '<S10>'  : 'PMSM_FOC_DualPlant_Controller_v21/Native_FOC_Controller_100us/SVPWM_Duty_Calculation'
+ * '<S11>'  : 'PMSM_FOC_DualPlant_Controller_v21/Native_FOC_Controller_100us/Speed_PI_Controller'
  */
 #endif                                /* PMSM_FOC_DualPlant_Controller_v21_h_ */
 
