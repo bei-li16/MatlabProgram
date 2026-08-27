@@ -1,0 +1,29 @@
+PMSM FOC Dual Plant v2.1.0 verification
+Controller model: PMSM_FOC_DualPlant_Controller_v21
+Closed-loop model: PMSM_FOC_DualPlant_ClosedLoop_v21
+Default selection: 2 (MathWorks MCB PMSM HDL)
+Variant choices: 2
+Native choice present: 1
+MathWorks reference: mcbhdlplantlib/PMSM HDL
+MathWorks reference verified: 1
+Callback button present: 1
+Native final speed rpm: 993.090393
+Native maximum speed rpm: 1084.07068
+Native maximum abs Iq A: 2.13765693
+Native duty minimum: 0.0852309167
+Native duty maximum: 0.914757848
+Native final torque Nm: 0.204401806
+Native simulation pass: 1
+MathWorks MCB PMSM HDL final speed rpm: 993.090332
+MathWorks MCB PMSM HDL maximum speed rpm: 1084.07068
+MathWorks MCB PMSM HDL maximum abs Iq A: 2.13765669
+MathWorks MCB PMSM HDL duty minimum: 0.0852309167
+MathWorks MCB PMSM HDL duty maximum: 0.914757967
+MathWorks MCB PMSM HDL final torque Nm: 0.204401821
+MathWorks MCB PMSM HDL simulation pass: 1
+ERT step present: 1
+ERT initialize present: 1
+ERT inputs present: 1
+ERT outputs present: 1
+Generated S-Function text present: 0
+Code verification pass: 1
