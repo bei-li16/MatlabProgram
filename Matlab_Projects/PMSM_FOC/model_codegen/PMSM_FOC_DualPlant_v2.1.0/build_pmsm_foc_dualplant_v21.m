@@ -58,6 +58,7 @@ fprintf('CODEX_DUAL_MCB_MAX_ABS_IQ_A=%.9g\n', mcbMetrics.MaximumAbsIqA);
 fprintf('CODEX_DUAL_MCB_PASS=%d\n', mcbPass);
 
 createComparisonPlot(nativeOutput, mcbOutput, versionDirectory);
+exportArchitectureImages(harnessName, versionDirectory);
 if ~(nativePass && mcbPass)
     error('At least one PMSM plant choice failed the closed-loop limits.');
 end
@@ -345,18 +346,26 @@ nativeSpeed = nativeOutput.get('native_speed_rpm');
 mcbSpeed = mcbOutput.get('native_speed_rpm');
 nativeIq = nativeOutput.get('native_iq_a');
 mcbIq = mcbOutput.get('native_iq_a');
+nativeTorque = nativeOutput.get('native_torque_nm');
+mcbTorque = mcbOutput.get('native_torque_nm');
+nativeDuty = nativeOutput.get('native_duty_a');
+mcbDuty = mcbOutput.get('native_duty_a');
 figureHandle = figure('Visible', 'off', 'Color', 'white', ...
-    'Position', [100 100 1100 700]);
-subplot(2, 1, 1);
+    'Position', [100 100 1200 820]);
+layout = tiledlayout(figureHandle, 2, 2, 'TileSpacing', 'compact', ...
+    'Padding', 'compact');
+
+nexttile(layout);
 plot(nativeSpeed.Time, nativeSpeed.Data, 'LineWidth', 1.3);
 hold on;
 plot(mcbSpeed.Time, mcbSpeed.Data, '--', 'LineWidth', 1.3);
-plot([0 2], [1000 1000], ':', 'LineWidth', 1.0);
+plot([0 0.05 0.05 2], [0 0 1000 1000], ':', 'LineWidth', 1.0);
 grid on;
+xlabel('Time (s)');
 ylabel('Speed (rpm)');
 legend('Native PMSM', 'MathWorks PMSM HDL', 'Reference', 'Location', 'best');
-title('PMSM FOC dual-plant comparison v2.1.0');
-subplot(2, 1, 2);
+
+nexttile(layout);
 plot(nativeIq.Time, nativeIq.Data, 'LineWidth', 1.3);
 hold on;
 plot(mcbIq.Time, mcbIq.Data, '--', 'LineWidth', 1.3);
@@ -364,9 +373,47 @@ grid on;
 xlabel('Time (s)');
 ylabel('Iq (A)');
 legend('Native PMSM', 'MathWorks PMSM HDL', 'Location', 'best');
+
+nexttile(layout);
+plot(nativeTorque.Time, nativeTorque.Data, 'LineWidth', 1.3);
+hold on;
+plot(mcbTorque.Time, mcbTorque.Data, '--', 'LineWidth', 1.3);
+plot([0 0.5 0.5 2], [0 0 0.2 0.2], ':', 'LineWidth', 1.0);
+grid on;
+xlabel('Time (s)');
+ylabel('Torque (N m)');
+legend('Native PMSM', 'MathWorks PMSM HDL', 'Load torque', 'Location', 'best');
+
+nexttile(layout);
+plot(nativeDuty.Time, nativeDuty.Data, 'LineWidth', 1.3);
+hold on;
+plot(mcbDuty.Time, mcbDuty.Data, '--', 'LineWidth', 1.3);
+plot([0 2], [0.02 0.02], ':', 'LineWidth', 0.9);
+plot([0 2], [0.98 0.98], ':', 'LineWidth', 0.9);
+grid on;
+xlabel('Time (s)');
+ylabel('Duty A');
+ylim([0 1]);
+legend('Native PMSM', 'MathWorks PMSM HDL', 'Lower limit', ...
+    'Upper limit', 'Location', 'best');
+
+title(layout, 'PMSM FOC dual-plant comparison v2.1.0');
 exportgraphics(figureHandle, fullfile(versionDirectory, ...
     'PMSM_FOC_DualPlant_v21_results.png'), 'Resolution', 160);
 close(figureHandle);
+end
+
+function exportArchitectureImages(modelName, versionDirectory)
+overviewPath = fullfile(versionDirectory, ...
+    'PMSM_FOC_DualPlant_v21_architecture.png');
+plantPath = [modelName '/Selectable_PMSM_Plant'];
+plantImagePath = fullfile(versionDirectory, ...
+    'PMSM_FOC_DualPlant_v21_plant_variants.png');
+
+open_system(modelName);
+print(['-s' modelName], '-dpng', '-r160', overviewPath);
+open_system(plantPath);
+print(['-s' plantPath], '-dpng', '-r160', plantImagePath);
 end
 
 function report = inspectVariantStructure(modelName)

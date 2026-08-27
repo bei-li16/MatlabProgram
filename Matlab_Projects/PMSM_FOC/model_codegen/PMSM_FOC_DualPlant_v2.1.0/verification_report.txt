@@ -7,6 +7,7 @@ Native choice present: 1
 MathWorks reference: mcbhdlplantlib/PMSM HDL
 MathWorks reference verified: 1
 Callback button present: 1
+One-click switch link present: 1
 Native final speed rpm: 993.090393
 Native maximum speed rpm: 1084.07068
 Native maximum abs Iq A: 2.13765693
