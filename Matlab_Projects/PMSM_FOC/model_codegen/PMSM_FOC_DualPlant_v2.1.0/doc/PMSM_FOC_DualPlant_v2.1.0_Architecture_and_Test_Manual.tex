@@ -1,0 +1,442 @@
+\documentclass[11pt,a4paper,fontset=fandol]{ctexart}
+
+\usepackage[a4paper,margin=22mm,headheight=15pt]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage{caption,float,pdflscape}
+\usepackage{enumitem,xcolor,fancyhdr,hyperref,lastpage}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit}
+
+\definecolor{navy}{HTML}{17365D}
+\definecolor{blue}{HTML}{2F75B5}
+\definecolor{lightblue}{HTML}{DDEBF7}
+\definecolor{lightgray}{HTML}{F2F2F2}
+\definecolor{green}{HTML}{548235}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=navy,
+  urlcolor=blue,
+  pdftitle={PMSM FOC Dual Plant v2.1.0 架构与测试手册},
+  pdfauthor={MatlabProgram},
+  pdfsubject={FOC 组件、Stateflow 电机状态机、双被控对象和自动测试结果}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small PMSM FOC Dual Plant v2.1.0}
+\fancyhead[R]{\small 架构与测试手册}
+\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist[itemize]{leftmargin=2em,itemsep=0.25em,topsep=0.35em}
+\setlist[enumerate]{leftmargin=2em,itemsep=0.25em,topsep=0.35em}
+\captionsetup{font=small,labelfont=bf,labelsep=quad}
+\renewcommand{\arraystretch}{1.22}
+\setlength{\tabcolsep}{5pt}
+\graphicspath{{figures/}}
+
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\sectionline}{\vspace{-0.55em}\noindent\color{blue}\rule{\textwidth}{0.8pt}\color{black}\vspace{0.35em}}
+\newcommand{\pass}{\textbf{\color{green}PASS}}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{25mm}
+  {\Huge\bfseries\color{navy} PMSM FOC Dual Plant v2.1.0\par}
+  \vspace{7mm}
+  {\LARGE 模型架构、Stateflow 状态管理与测试手册\par}
+  \vspace{15mm}
+  \color{blue}\rule{0.82\textwidth}{1.2pt}\color{black}
+  \vspace{14mm}
+
+  \begin{tabular}{rl}
+    \textbf{模型平台：} & MATLAB/Simulink/Stateflow R2024a \\
+    \textbf{控制方案：} & 离散磁场定向控制（FOC） \\
+    \textbf{被控对象：} & Native 离散 PMSM / MathWorks PMSM HDL \\
+    \textbf{控制调度：} & $100\,\mu\mathrm{s}$ 电流与状态任务 / 1 ms 速度任务 \\
+    \textbf{手册版本：} & v2.1.0 \\
+    \textbf{验证日期：} & 2026 年 8 月 28 日 \\
+  \end{tabular}
+
+  \vfill
+  {\large MatlabProgram\par}
+  \vspace{8mm}
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+\section{范围与架构依据}
+\sectionline
+
+本手册覆盖 \code{PMSM_FOC_DualPlant_v2.1.0} 模型包，说明组件化 FOC 控制器、Stateflow 电机运行状态管理、双 PMSM Variant 被控对象、调度边界、保护阈值以及自动测试结果。设计依据为项目 \path{doc/PMSM_FOC_Software_Architecture.tex} 中定义的分层控制和电机状态管理原则：数值控制算法由 Simulink 组件负责；控制使能、PWM 所有权及故障状态转换由 Stateflow 负责。
+
+本版本控制器采用 7 输入/8 输出接口：在原 6 个控制输入基础上增加布尔型 \code{FaultResetAck}，作为 FAULT 退出的显式用户确认。Stateflow 状态码在独立控制器模型内终止；闭环 Harness 将状态、校准、对齐和故障测试信号统一收拢到 \code{Motor_Stateflow_Test_Logging} 子系统。两个电机对象及该日志子系统仅属于仿真环境，不进入控制器 ERT 目标代码。
+
+\subsection{主要交付文件}
+
+\begin{itemize}[nosep,leftmargin=2em]
+  \item \path{PMSM_FOC_DualPlant_ClosedLoop_v21.slx}：闭环仿真和双被控对象测试模型。
+  \item \path{PMSM_FOC_DualPlant_Controller_v21.slx}：可生成 ERT C 代码的控制器模型。
+  \item \path{add_pmsm_foc_stateflow_v21.m}：幂等集成 Stateflow 状态机、安全监测和控制/PWM 门控。
+  \item \path{refactor_pmsm_foc_controller_v21.m}：重建独立 FOC 组件及确定的数据流连接。
+  \item \path{build_pmsm_foc_dualplant_v21.m}：完成模型配置、双分支仿真、状态机测试、绘图、结构检查和代码生成。
+  \item \path{verification_report.txt}：最近一次机器可读验收结果。
+\end{itemize}
+
+\section{系统总体架构}
+\sectionline
+
+闭环系统由速度/负载工况、Stateflow 运行监督器、组件化 FOC 控制器、48 V 平均逆变器和可切换 PMSM 被控对象组成。Stateflow 在 ALIGN 状态授权固定对齐电压和 PWM，在 RUN 状态放行闭环速度指令与 SVPWM；其他状态将速度指令置零、三相占空比切换为安全值 0.5。该边界使“何时允许控制”和“如何计算控制量”彼此独立。
+
+\begin{center}
+\fcolorbox{blue}{lightblue}{%
+\begin{minipage}{0.91\textwidth}
+\centering\small
+Start/Fault $\rightarrow$ Stateflow Motor Supervisor（$100\,\mu\mathrm{s}$）
+\\[0.35em]
+$\Downarrow$ ControlEnable / PwmEnable
+\\[0.35em]
+电流偏置校准 $\rightarrow$ Speed PI（1 ms）$\rightarrow$ Rate Transition $\rightarrow$ Current FOC（$100\,\mu\mathrm{s}$）
+\\[0.35em]
+$\Downarrow$
+\\[0.35em]
+SVPWM $\rightarrow$ PWM Gate $\rightarrow$ Average Inverter $\rightarrow$ Selectable PMSM Plant
+\\[0.35em]
+$\Uparrow$ Speed / Theta / Ia / Ib / Torque / Id / Iq feedback
+\end{minipage}}
+\end{center}
+
+\begin{landscape}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{PMSM_FOC_DualPlant_v21_architecture.png}
+  \caption{闭环顶层架构：Stateflow 监督、组件化 FOC、逆变器与可选 PMSM}
+  \label{fig:top-architecture}
+\end{figure}
+\end{landscape}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\textwidth]{PMSM_FOC_DualPlant_v21_plant_variants.png}
+  \caption{Native 离散 PMSM 与 MathWorks PMSM HDL Variant 分支}
+  \label{fig:plant-variants}
+\end{figure}
+
+\section{控制组件与任务边界}
+\sectionline
+
+速度环与电流环未混放。速度 PI 的离散状态每 1 ms 更新；显式 Rate Transition 将 $I_q^*$ 传到 $100\,\mu\mathrm{s}$ 任务；Clarke、Park、D/Q 电流 PI、解耦、电压合成、逆变换和 SVPWM 位于快速任务。Stateflow 与保护监测同样以 $100\,\mu\mathrm{s}$ 执行，保证 PWM 使能可在一个基础步长内响应故障。
+
+\begin{table}[H]
+\centering
+\caption{任务调度与所有权}
+\label{tab:tasks}
+\begin{tabularx}{0.94\textwidth}{p{0.18\textwidth}p{0.22\textwidth}X}
+\toprule
+\textbf{周期} & \textbf{任务/组件} & \textbf{责任边界} \\
+\midrule
+$100\,\mu\mathrm{s}$ & Stateflow 与安全监测 & 状态转换、控制/PWM 权限、故障锁存、确认复位和 PI 复位 \\
+$100\,\mu\mathrm{s}$ & 校准与对齐组件 & 100 样本电流偏置均值；ALIGN 时选择 2 V d 轴、0 V q 轴和固定角度 \\
+$100\,\mu\mathrm{s}$ & 电流 FOC 快速链 & 坐标变换、D/Q 电流调节、解耦、电压合成和 SVPWM \\
+1 ms & 速度 PI & 将速度误差转换为有界 $I_q^*$，不直接拥有 PWM \\
+跨速率 & Rate Transition & 将 1 ms 的 $I_q^*$ 确定性地传入 $100\,\mu\mathrm{s}$ 任务 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{landscape}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{PMSM_FOC_DualPlant_v21_controller_architecture.png}
+  \caption{独立组件构成的 FOC 控制器及 Stateflow 门控结构}
+  \label{fig:controller-architecture}
+\end{figure}
+\end{landscape}
+
+{\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.20\textwidth}
+                  >{\raggedright\arraybackslash}p{0.25\textwidth}
+                  >{\raggedright\arraybackslash}p{0.27\textwidth}
+                  >{\raggedright\arraybackslash}p{0.20\textwidth}}
+\caption{FOC 组件职责、接口与关键边界}\label{tab:foc-components}\\
+\toprule
+\textbf{组件} & \textbf{单一责任} & \textbf{主要接口} & \textbf{参数/约束} \\
+\midrule
+\endfirsthead
+\multicolumn{4}{l}{\small 表 \thetable\ （续）}\\
+\toprule
+\textbf{组件} & \textbf{单一责任} & \textbf{主要接口} & \textbf{参数/约束} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{4}{r}{\small 下页续}\\
+\endfoot
+\bottomrule
+\endlastfoot
+
+{\ttfamily\scriptsize Speed\_PI\_\allowbreak Controller\_1ms} &
+速度误差变换为 $q$ 轴电流给定 &
+\code{SpeedReferenceRpm}, \code{SpeedRpm} $\rightarrow$ \code{IqReference} &
+1 ms；$K_p=0.02$，$K_i=0.05$；$\pm8$ A；非 RUN 清零积分器 \\
+
+{\ttfamily\scriptsize Current\_Offset\_\allowbreak Calibration\_100us} &
+对静止 A/B 相采样求均值并保持偏置，输出校正电流 &
+Raw Ia/Ib、Enable/Reset $\rightarrow$ Corrected Ia/Ib、Offset、Done &
+100 样本；$100\,\mu\mathrm{s}$；INIT/FAULT 清零 \\
+
+{\ttfamily\scriptsize IqRef\_Rate\_\allowbreak Transition} &
+确定性跨速率传递 $I_q^*$ &
+1 ms \code{IqReference} $\rightarrow$ $100\,\mu\mathrm{s}$ 数据 &
+显式 1 ms 到 $100\,\mu\mathrm{s}$ 边界 \\
+
+\code{Clarke_Transform} &
+$a/b$ 相电流转换到 $\alpha/\beta$ &
+\code{Ia}, \code{Ib} $\rightarrow$ \code{Ialpha}, \code{Ibeta} &
+$I_\alpha=I_a$；$I_\beta=(I_a+2I_b)/\sqrt{3}$ \\
+
+\code{Park_Transform} &
+$\alpha/\beta$ 电流转换到 $d/q$ &
+\code{Ialpha}, \code{Ibeta}, $\theta_e$ $\rightarrow$ \code{Id}, \code{Iq} &
+与逆 Park 使用同一角度约定 \\
+
+\code{D_Axis_Current_PI} &
+将 $I_d$ 调节到 0 A &
+$I_d^*=0$, \code{Id} $\rightarrow$ \code{VdPI} &
+$K_p=1$，$K_i=500$；积分限幅 $\pm30$ \\
+
+\code{Q_Axis_Current_PI} &
+跟踪速度环给出的 $I_q^*$ &
+\code{IqReference}, \code{Iq} $\rightarrow$ \code{VqPI} &
+$K_p=1$，$K_i=500$；积分限幅 $\pm30$ \\
+
+{\ttfamily\scriptsize DQ\_Decoupling\_\allowbreak Feedforward} &
+补偿交叉耦合和反电动势 &
+Speed, \code{Id}, \code{Iq} $\rightarrow$ \code{VdFF}, \code{VqFF} &
+极对数、$L_d$、$L_q$、$\lambda_{pm}$ \\
+
+\code{DQ_Voltage_Command} &
+叠加 PI 与前馈电压 &
+PI/FF $\rightarrow$ \code{VdCommand}, \code{VqCommand} &
+d/q 轴分别限幅 $\pm26$ V \\
+
+{\ttfamily\scriptsize Alignment\_DQ\_\allowbreak Override\_100us} &
+仅在 ALIGN 状态选择固定对齐命令 &
+FOC Vd/Vq、反馈角、AlignmentEnable $\rightarrow$ Applied Vd/Vq/Theta &
+$V_d=2$ V，$V_q=0$ V，$\theta_e=0$ rad \\
+
+{\ttfamily\scriptsize Inverse\_Park\_\allowbreak Transform} &
+$d/q$ 电压转换到 $\alpha/\beta$ &
+\code{Vd}, \code{Vq}, $\theta_e$ $\rightarrow$ \code{Valpha}, \code{Vbeta} &
+$100\,\mu\mathrm{s}$ 快速链 \\
+
+{\ttfamily\scriptsize Inverse\_Clarke\_\allowbreak Transform} &
+$\alpha/\beta$ 电压转换到三相 &
+\code{Valpha}, \code{Vbeta} $\rightarrow$ \code{Va/Vb/Vc} &
+B/C 相系数 $\pm\sqrt{3}/2$ \\
+
+{\ttfamily\scriptsize SVPWM\_Duty\_Calculation} &
+公共模注入并计算三相占空比 &
+\code{Va/Vb/Vc}, \code{Vdc} $\rightarrow$ \code{DutyA/B/C} &
+$V_{off}=-0.5(V_{max}+V_{min})$；0.02--0.98 \\
+\end{longtable}
+}
+
+\section{Stateflow 电机状态管理}
+\sectionline
+
+\code{Motor_State_Machine_100us} 是控制使能和 PWM 使能的唯一所有者。顶层 \code{SUPERVISED} 父状态包含 INIT、READY、CALIB、ALIGN 和 RUN，并以一条统一故障迁移进入顶层 FAULT。Chart 另输出 \code{CalibrationEnable/Reset}、\code{AlignmentEnable} 和 \code{ControllerReset}；数值平均及电压选择仍由独立 Simulink 组件负责。FAULT 不会因物理故障自行消失而退出，必须同时满足显式 \code{ResetAck}、故障源消失以及启动命令撤销。
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[
+    >=Stealth,
+    node distance=7mm and 7mm,
+    st/.style={draw=navy,rounded corners=2pt,fill=lightblue,
+      minimum width=25mm,minimum height=13mm,align=center,font=\small},
+    fault/.style={draw=red!70!black,rounded corners=2pt,fill=red!10,
+      minimum width=30mm,minimum height=13mm,align=center,font=\small},
+    flow/.style={->,thick,draw=navy,font=\scriptsize}]
+    \node[st] (init) {INIT\\复位状态};
+    \node[st,right=of init] (ready) {READY\\等待启动};
+    \node[st,right=of ready] (calib) {CALIB\\100 样本校准};
+    \node[st,right=of calib] (align) {ALIGN\\2 V d 轴对齐};
+    \node[st,right=of align] (run) {RUN\\闭环 FOC};
+    \node[fault,below=16mm of calib] (fault) {FAULT\\PWM 关闭并锁存};
+    \node[draw=blue,dashed,rounded corners=3pt,fit=(init)(ready)(calib)(align)(run),
+      inner sep=4mm,label={[font=\scriptsize,blue]above:SUPERVISED}] (super) {};
+    \draw[flow] (init) -- node[above]{1 tick} (ready);
+    \draw[flow] (ready) -- node[above]{StartCmd} (calib);
+    \draw[flow] (calib) -- node[above]{Done} (align);
+    \draw[flow] (align) -- node[above]{200 tick} (run);
+    \draw[flow] (super.south) -- node[right]{任一故障/校准超时} (fault.north);
+    \draw[flow] (fault.west) to[bend left=22]
+      node[left,align=right]{ResetAck\\且故障消失} (init.south);
+    \node[font=\scriptsize,text=navy,anchor=north east,align=right]
+      at (super.south east) {ALIGN/RUN：$\lnot$StartCmd $\Rightarrow$ INIT};
+  \end{tikzpicture}
+  \caption{Stateflow 顶层状态、职责和锁存故障路径（LaTeX 重绘）}
+  \label{fig:stateflow-architecture}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Stateflow 状态定义与输出}
+\label{tab:states}
+\small
+\begin{tabularx}{0.95\textwidth}{p{0.10\textwidth}p{0.15\textwidth}XXp{0.12\textwidth}}
+\toprule
+\textbf{代码} & \textbf{状态} & \textbf{职责} & \textbf{退出条件} & \textbf{使能} \\
+\midrule
+1 & INIT & 清空校准状态和速度/电流 PI & 1 个 tick 后进入 READY & 控制 0 / PWM 0 \\
+2 & READY & 保持 PI 复位，等待有效启动命令 & \code{StartCmd} 为真后进入 CALIB & 控制 0 / PWM 0 \\
+3 & CALIB & 使能 100 样本电流偏置平均 & \code{CalibrationDone} 进入 ALIGN；150 tick 超时进 FAULT & 控制 0 / PWM 0 \\
+4 & ALIGN & 施加 2 V d 轴、0 V q 轴和固定角度 & 200 tick 进入 RUN；停止回 INIT & 控制 0 / PWM 1 \\
+5 & RUN & 放行速度给定和闭环 SVPWM & 停止回 INIT；任一故障进 FAULT & 控制 1 / PWM 1 \\
+6 & FAULT & 关闭 PWM、清空 PI/校准并保持锁存 & ResetAck、故障消失且停止后回 INIT & 控制 0 / PWM 0 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+以 $100\,\mu\mathrm{s}$ tick 计算，正常启动序列为 INIT $\rightarrow$ READY $\rightarrow$ CALIB（100 样本）$\rightarrow$ ALIGN（20 ms）$\rightarrow$ RUN。测试速度命令在 0.05 s 上升，0.06 s 完成校准，模型于 0.08 s 进入 RUN。
+
+\subsection{安全监测与输出门控}
+
+\code{Motor_Safety_Monitor_100us} 只负责把物理量比较结果合成为 \code{FaultDetected}，不决定状态。Stateflow 根据该布尔量执行状态迁移；ALIGN/RUN 以外的状态将三相占空比强制为 0.5。FAULT 退出还需要独立 \code{FaultResetAck}，因此物理故障源恢复不会触发自动重启。
+
+\begin{table}[H]
+\centering
+\caption{故障判据与安全动作}
+\label{tab:safety}
+\begin{tabularx}{0.94\textwidth}{p{0.24\textwidth}p{0.25\textwidth}X}
+\toprule
+\textbf{监测项} & \textbf{触发阈值} & \textbf{FAULT 动作} \\
+\midrule
+机械转速 & $|n|>3000$ rpm & 控制/PWM 禁止，三相占空比置 0.5 \\
+A/B 相电流 & $|I_a|>12$ A 或 $|I_b|>12$ A & 控制/PWM 禁止，三相占空比置 0.5 \\
+直流母线 & $V_{dc}<10$ V 或 $V_{dc}>60$ V & 控制/PWM 禁止，三相占空比置 0.5 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{被控对象与关键参数}
+\sectionline
+
+两个 Variant 分支具有一致的 3 输入/7 输出接口：输入为 \code{VAlpha}、\code{VBeta} 和 \code{LoadTorque}；输出为 \code{SpeedRpm}、\code{ThetaElectrical}、\code{Ia}、\code{Ib}、\code{TorqueNm}、\code{Id} 和 \code{Iq}。默认选择值为 2，即 MathWorks \code{mcbhdlplantlib/PMSM HDL} 分支。
+
+\begin{table}[H]
+\centering
+\caption{仿真工况及电机参数}
+\label{tab:parameters}
+\small
+\begin{tabularx}{0.94\textwidth}{p{0.15\textwidth}p{0.43\textwidth}X}
+\toprule
+\textbf{类别} & \textbf{参数} & \textbf{数值} \\
+\midrule
+工况 & 速度给定 & 0.05 s 时由 0 阶跃至 1000 rpm \\
+工况 & 负载转矩 & 0.5 s 时由 0 阶跃至 0.2 N$\cdot$m \\
+仿真 & 求解器、步长、时长 & FixedStepDiscrete，$100\,\mu\mathrm{s}$，2.0 s \\
+电源 & 直流母线电压 & 48 V \\
+电机 & 定子电阻 $R_s$ & 0.4 $\Omega$ \\
+电机 & $L_d$、$L_q$ & 1 mH、1 mH \\
+电机 & 永磁磁链 $\lambda_{pm}$ & 0.05 Wb \\
+电机 & 极对数 & 4 \\
+电机 & 转动惯量 $J$ & 0.002 kg$\cdot$m$^2$ \\
+电机 & 黏性阻尼 $B$ & 0.0001 N$\cdot$m$\cdot$s/rad \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{自动测试与结果}
+\sectionline
+
+构建脚本依次执行 Native 与 MathWorks 两个 2 s 闭环场景、正常启动、已知偏置校准、ALIGN 电压输出、70 V 母线过压、五个运行状态的故障锁存矩阵、确认复位、组件/连线/速率结构检查以及控制器 ERT 代码生成。所有测试使用 MATLAB/Simulink/Stateflow R2024a。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\textwidth]{PMSM_FOC_DualPlant_v21_stateflow_results.png}
+  \caption{Stateflow 启动、校准、对齐、过压关断和确认复位结果}
+  \label{fig:stateflow-results}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Stateflow 测试验收结果}
+\label{tab:stateflow-tests}
+\small
+\begin{tabularx}{0.95\textwidth}{p{0.28\textwidth}Xp{0.13\textwidth}}
+\toprule
+\textbf{测试} & \textbf{观察结果} & \textbf{结论} \\
+\midrule
+正常启动与对齐 & 访问 [1 2 3 4 5]；0.08 s 进入 RUN；ALIGN 时 AppliedVd=2 V、AppliedVq=0 V 且 PWM 有效 & \pass \\
+电流偏置校准 & 注入 $+0.75/-0.50$ A；0.06 s 估计为 $+0.75/-0.50$ A；完成时校正电流均为 0 A & \pass \\
+70 V 过压注入 & 访问 [1 6]；0.0001 s 进入 FAULT；PwmEnable=0，DutyA=0.5 & \pass \\
+任意状态故障锁存 & 分别从 INIT/READY/CALIB/ALIGN/RUN 注入短脉冲；故障源清除后五项均保持 FAULT & \pass \\
+确认复位 & 0.004 s 清除故障源后仍锁存；0.008 s ResetAck 才退出，最终进入 READY & \pass \\
+状态/速率结构 & 6 状态、12 个控制组件、7 输入/8 输出接口和 $100\,\mu\mathrm{s}$ Chart 均存在 & \pass \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\textwidth]{PMSM_FOC_DualPlant_v21_results.png}
+  \caption{两个 PMSM 被控对象的速度、$I_q$、转矩和 Duty A 曲线}
+  \label{fig:plant-results}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{双被控对象闭环验收结果}
+\label{tab:plant-tests}
+\small
+\begin{tabularx}{0.94\textwidth}{X>{\raggedleft\arraybackslash}p{0.27\textwidth}>{\raggedleft\arraybackslash}p{0.27\textwidth}}
+\toprule
+\textbf{指标} & \textbf{Native 离散 PMSM} & \textbf{MathWorks PMSM HDL} \\
+\midrule
+最终转速 & 996.191467 rpm & 996.191345 rpm \\
+最大转速 & 1084.86560 rpm & 1084.86560 rpm \\
+最大绝对 $I_q$ & 2.14349961 A & 2.14349937 A \\
+Duty A 最小值 & 0.0849514306 & 0.0849514306 \\
+Duty A 最大值 & 0.915057063 & 0.915057063 \\
+最终电磁转矩 & 0.201538101 N$\cdot$m & 0.201538414 N$\cdot$m \\
+闭环限值检查 & \pass & \pass \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+结构及代码检查还确认：
+\begin{itemize}[nosep,leftmargin=2em]
+  \item Variant 分支数为 2，独立控制组件数为 12；
+  \item 控制器接口为 7 输入/8 输出，显式 \code{FaultResetAck} 存在；
+  \item 速度任务为 0.001 s，电流任务和 Stateflow 任务均为 0.0001 s；
+  \item 控制器与闭环模型悬空线数均为 0；
+  \item 生成代码包含 \code{initialize/step}、外部输入/输出和 Stateflow 逻辑，不包含 S-Function 文本，综合结论为 \pass。
+\end{itemize}
+
+\section{重建、切换与维护}
+\sectionline
+
+在 MATLAB 中将当前目录切换至 v2.1.0 模型目录并运行：
+
+\begin{center}
+\fcolorbox{navy}{lightgray}{\parbox{0.82\textwidth}{\ttfamily\centering build\_pmsm\_foc\_dualplant\_v21}}
+\end{center}
+
+脚本会重建组件和 Stateflow 集成，依次仿真两个 Variant，执行校准、对齐、五状态故障锁存和确认复位测试，刷新文档图，验证连线和任务周期，生成控制器 ERT C 代码并更新 \path{verification_report.txt}。Stateflow 集成脚本可重复运行：每次先移除上一次集成及失效分支，再建立同一结构，因此不会积累红色虚线或重复连线。Harness 的 14 路测试信号集中在一个日志子系统内，不进入 ERT 控制器。
+
+模型工作区变量 \code{PMSM_PLANT_SELECTION} 控制被控对象：1 为 Native 离散 PMSM，2 为 MathWorks PMSM HDL（默认）。仿真停止时也可使用顶层 Dashboard 按钮切换，下一次仿真编译所选分支。
+
+\section{结论}
+\sectionline
+
+v2.1.0 已明确职责边界：Stateflow 管理模式、PWM 所有权和锁存复位；独立 Simulink 组件执行 100 样本偏置校准与 2 V d 轴对齐；1 ms 速度环生成转矩电流请求；$100\,\mu\mathrm{s}$ 电流环完成 FOC 与 SVPWM。双被控对象、数值校准、实际对齐电压、任意运行状态故障锁存、确认复位、结构和 ERT 代码生成均通过自动验收。
+
+\end{document}

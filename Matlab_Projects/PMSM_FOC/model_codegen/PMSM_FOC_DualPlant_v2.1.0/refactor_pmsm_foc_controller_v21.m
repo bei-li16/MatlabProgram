@@ -1,6 +1,7 @@
 function refactor_pmsm_foc_controller_v21
 %REFACTOR_PMSM_FOC_CONTROLLER_V21 Build an explicit cascaded dual-rate FOC.
-% The code-generation model keeps its 6-input/8-output interface. Both model
+% The code-generation model keeps its 8 outputs and adds a seventh input for
+% explicit fault-reset acknowledgement. Both model
 % roots show the textbook cascade directly: 1 ms speed PI, explicit 1 ms to
 % 100 us rate transition, Clarke/Park feedback transforms, independent d/q
 % current PIs, decoupling, inverse transforms, SVPWM, inverter, and PMSM.
@@ -22,6 +23,7 @@ load_system(harnessFile);
 
 buildControllerModelArchitecture(controllerName);
 buildHarnessArchitecture(harnessName);
+add_pmsm_foc_stateflow_v21;
 open_system(controllerName);
 set_param(controllerName, 'ZoomFactor', 'FitSystem');
 set_param(controllerName, 'ZoomFactor', '100');
@@ -343,6 +345,8 @@ function buildSpeedPi(parent)
 Simulink.SubSystem.deleteContents(parent);
 addIn(parent, 'SpeedReferenceRpm', 1, [20 135 50 149]);
 addIn(parent, 'SpeedRpm', 2, [20 220 50 234]);
+addIn(parent, 'ControllerReset', 3, [20 315 50 329]);
+set_param([parent '/ControllerReset'], 'OutDataTypeStr', 'boolean');
 addOut(parent, 'IqReference', 1, [720 175 750 189]);
 add_block('simulink/Discrete/Zero-Order Hold', [parent '/SpeedRef_1ms'], ...
     'SampleTime', '0.001', 'Position', [90 120 155 150]);
@@ -359,6 +363,12 @@ addSaturation(parent, 'Integrator_Limit', '-FOC_Native_IqLimit', ...
 add_block('simulink/Discrete/Unit Delay', [parent '/Integrator_State'], ...
     'InitialCondition', 'single(0.0)', 'SampleTime', '0.001', ...
     'Position', [515 315 570 345]);
+add_block('simulink/Sources/Constant', [parent '/Integrator_Zero'], ...
+    'Value', 'single(0.0)', 'OutDataTypeStr', 'single', ...
+    'Position', [575 335 625 365]);
+add_block('simulink/Signal Routing/Switch', ...
+    [parent '/Integrator_Reset_Select'], 'Criteria', 'u2 ~= 0', ...
+    'Position', [675 280 720 335]);
 addSum(parent, 'Iq_Reference_Sum', '++', [520 120 550 180]);
 addSaturation(parent, 'Iq_Reference_Limit', '-FOC_Native_IqLimit', ...
     'FOC_Native_IqLimit', [590 130 660 175]);
@@ -372,7 +382,10 @@ add_line(parent, 'RpmToRad/1', 'KiTs/1', 'autorouting', 'on');
 add_line(parent, 'KiTs/1', 'Integrator_Add/1', 'autorouting', 'on');
 add_line(parent, 'Integrator_State/1', 'Integrator_Add/2', 'autorouting', 'on');
 add_line(parent, 'Integrator_Add/1', 'Integrator_Limit/1', 'autorouting', 'on');
-add_line(parent, 'Integrator_Limit/1', 'Integrator_State/1', 'autorouting', 'on');
+add_line(parent, 'Integrator_Zero/1', 'Integrator_Reset_Select/1', 'autorouting', 'on');
+add_line(parent, 'ControllerReset/1', 'Integrator_Reset_Select/2', 'autorouting', 'on');
+add_line(parent, 'Integrator_Limit/1', 'Integrator_Reset_Select/3', 'autorouting', 'on');
+add_line(parent, 'Integrator_Reset_Select/1', 'Integrator_State/1', 'autorouting', 'on');
 add_line(parent, 'Kp/1', 'Iq_Reference_Sum/1', 'autorouting', 'on');
 add_line(parent, 'Integrator_State/1', 'Iq_Reference_Sum/2', 'autorouting', 'on');
 add_line(parent, 'Iq_Reference_Sum/1', 'Iq_Reference_Limit/1', 'autorouting', 'on');
@@ -380,7 +393,7 @@ add_line(parent, 'Iq_Reference_Limit/1', 'IqReference/1', 'autorouting', 'on');
 addNote(parent, ['RESPONSIBILITY: outer speed PI loop\n' ...
     'Ts=FOC_Native_SpeedPeriod (1 ms)\n' ...
     'Kp=FOC_Native_KpSpeed; Ki=FOC_Native_KiSpeed\n' ...
-    'Output limit: +/-FOC_Native_IqLimit; output remains at 1 ms'], ...
+    'Output limit: +/-FOC_Native_IqLimit; Stateflow reset outside RUN'], ...
     [80 15 690 95], 11, 'green', 'yellow');
 end
 
@@ -388,6 +401,8 @@ function buildCurrentPi(parent, axisLabel)
 Simulink.SubSystem.deleteContents(parent);
 addIn(parent, 'Reference', 1, [20 140 50 154]);
 addIn(parent, 'Measured', 2, [20 240 50 254]);
+addIn(parent, 'ControllerReset', 3, [20 330 50 344]);
+set_param([parent '/ControllerReset'], 'OutDataTypeStr', 'boolean');
 addOut(parent, 'VoltagePI', 1, [610 180 640 194]);
 addSum(parent, 'Current_Error', '+-', [100 155 130 230]);
 addGain(parent, 'Kp', 'FOC_Native_KpCurrent', [175 130 245 160]);
@@ -400,6 +415,12 @@ addSaturation(parent, 'Integrator_Limit', ...
 add_block('simulink/Discrete/Unit Delay', [parent '/Integrator_State'], ...
     'InitialCondition', 'single(0.0)', 'SampleTime', '0.0001', ...
     'Position', [325 320 380 350]);
+add_block('simulink/Sources/Constant', [parent '/Integrator_Zero'], ...
+    'Value', 'single(0.0)', 'OutDataTypeStr', 'single', ...
+    'Position', [405 330 455 360]);
+add_block('simulink/Signal Routing/Switch', ...
+    [parent '/Integrator_Reset_Select'], 'Criteria', 'u2 ~= 0', ...
+    'Position', [500 285 545 340]);
 addSum(parent, 'PI_Sum', '++', [510 145 540 215]);
 add_line(parent, 'Reference/1', 'Current_Error/1', 'autorouting', 'on');
 add_line(parent, 'Measured/1', 'Current_Error/2', 'autorouting', 'on');
@@ -408,14 +429,18 @@ add_line(parent, 'Current_Error/1', 'KiTs/1', 'autorouting', 'on');
 add_line(parent, 'KiTs/1', 'Integrator_Add/1', 'autorouting', 'on');
 add_line(parent, 'Integrator_State/1', 'Integrator_Add/2', 'autorouting', 'on');
 add_line(parent, 'Integrator_Add/1', 'Integrator_Limit/1', 'autorouting', 'on');
-add_line(parent, 'Integrator_Limit/1', 'Integrator_State/1', 'autorouting', 'on');
+add_line(parent, 'Integrator_Zero/1', 'Integrator_Reset_Select/1', 'autorouting', 'on');
+add_line(parent, 'ControllerReset/1', 'Integrator_Reset_Select/2', 'autorouting', 'on');
+add_line(parent, 'Integrator_Limit/1', 'Integrator_Reset_Select/3', 'autorouting', 'on');
+add_line(parent, 'Integrator_Reset_Select/1', 'Integrator_State/1', 'autorouting', 'on');
 add_line(parent, 'Kp/1', 'PI_Sum/1', 'autorouting', 'on');
 add_line(parent, 'Integrator_State/1', 'PI_Sum/2', 'autorouting', 'on');
 add_line(parent, 'PI_Sum/1', 'VoltagePI/1', 'autorouting', 'on');
 addNote(parent, sprintf(['RESPONSIBILITY: %s-axis current PI loop\n' ...
     'Ts=FOC_Native_CurrentPeriod (100 us)\n' ...
     'Kp=FOC_Native_KpCurrent; Ki=FOC_Native_KiCurrent\n' ...
-    'Integrator limit: +/-FOC_Native_CurrentIntegratorLimit'], axisLabel), ...
+    'Integrator limit: +/-FOC_Native_CurrentIntegratorLimit\n' ...
+    'Stateflow resets the integrator outside RUN'], axisLabel), ...
     [75 15 590 100], 11, 'green', 'yellow');
 end
 

@@ -46,6 +46,15 @@ nativeOutput = simulatePlant(harnessName, 1);
 mcbOutput = simulatePlant(harnessName, 2);
 nativeMetrics = collectMetrics(nativeOutput);
 mcbMetrics = collectMetrics(mcbOutput);
+stateflowReport = collectStateflowMetrics(mcbOutput);
+calibrationOutput = simulateCalibrationOffset(harnessName);
+calibrationReport = collectCalibrationMetrics(calibrationOutput);
+faultOutput = simulateOvervoltageFault(harnessName);
+faultReport = collectFaultMetrics(faultOutput);
+faultMatrixReport = verifyFaultLatchFromEveryState(harnessName);
+faultResetOutput = simulateAcknowledgedFaultReset(harnessName);
+faultResetReport = collectFaultResetMetrics(faultResetOutput);
+resetHarnessStimuli(harnessName);
 
 nativePass = metricsPass(nativeMetrics);
 mcbPass = metricsPass(mcbMetrics);
@@ -57,11 +66,22 @@ fprintf('CODEX_DUAL_MCB_FINAL_SPEED_RPM=%.9g\n', mcbMetrics.FinalSpeedRpm);
 fprintf('CODEX_DUAL_MCB_MAX_SPEED_RPM=%.9g\n', mcbMetrics.MaximumSpeedRpm);
 fprintf('CODEX_DUAL_MCB_MAX_ABS_IQ_A=%.9g\n', mcbMetrics.MaximumAbsIqA);
 fprintf('CODEX_DUAL_MCB_PASS=%d\n', mcbPass);
+fprintf('CODEX_STATEFLOW_RUN_ENTRY_S=%.9g\n', stateflowReport.RunEntryTimeS);
+fprintf('CODEX_STATEFLOW_NORMAL_PASS=%d\n', stateflowReport.Pass);
+fprintf('CODEX_STATEFLOW_FAULT_ENTRY_S=%.9g\n', faultReport.FaultEntryTimeS);
+fprintf('CODEX_STATEFLOW_FAULT_PASS=%d\n', faultReport.Pass);
+fprintf('CODEX_STATEFLOW_CALIBRATION_PASS=%d\n', calibrationReport.Pass);
+fprintf('CODEX_STATEFLOW_ALIGNMENT_PASS=%d\n', stateflowReport.AlignmentPass);
+fprintf('CODEX_STATEFLOW_ALL_STATE_FAULT_LATCH_PASS=%d\n', faultMatrixReport.Pass);
+fprintf('CODEX_STATEFLOW_ACK_RESET_PASS=%d\n', faultResetReport.Pass);
 
 createComparisonPlot(nativeOutput, mcbOutput, versionDirectory);
+createStateflowTestPlot(mcbOutput, calibrationOutput, faultOutput, ...
+    faultResetOutput, versionDirectory);
 exportArchitectureImages(controllerName, harnessName, versionDirectory);
-if ~(nativePass && mcbPass)
-    error('At least one PMSM plant choice failed the closed-loop limits.');
+if ~(nativePass && mcbPass && stateflowReport.Pass && calibrationReport.Pass && ...
+        faultReport.Pass && faultMatrixReport.Pass && faultResetReport.Pass)
+    error('A plant or Stateflow verification scenario failed.');
 end
 
 setPlantSelection(harnessName, 2);
@@ -73,7 +93,8 @@ variantReport = inspectVariantStructure(harnessName);
 architectureReport = inspectControllerArchitecture(controllerName, harnessName);
 writeVerificationReport(versionDirectory, controllerName, harnessName, ...
     nativeMetrics, mcbMetrics, nativePass, mcbPass, variantReport, ...
-    architectureReport, codeReport);
+    architectureReport, codeReport, stateflowReport, calibrationReport, ...
+    faultReport, faultMatrixReport, faultResetReport);
 
 fprintf('CODEX_DUAL_VARIANT_CHOICES=%d\n', variantReport.ChoiceCount);
 fprintf('CODEX_DUAL_MCB_REFERENCE_OK=%d\n', variantReport.McbReferencePresent);
@@ -85,6 +106,8 @@ fprintf('CODEX_DUAL_CONTROLLER_DANGLING_LINES=%d\n', architectureReport.Controll
 fprintf('CODEX_DUAL_HARNESS_DANGLING_LINES=%d\n', architectureReport.HarnessDanglingLines);
 fprintf('CODEX_DUAL_ARCHITECTURE_PASS=%d\n', architectureReport.Pass);
 fprintf('CODEX_DUAL_CODE_PASS=%d\n', codeReport.Pass);
+fprintf('CODEX_DUAL_STATEFLOW_STATES=%d\n', architectureReport.StateflowStateCount);
+fprintf('CODEX_DUAL_STATEFLOW_TASK_S=%.9g\n', architectureReport.StateflowSampleTime);
 fprintf('CODEX_DUAL_DEFAULT_SELECTION=2\n');
 
 open_system([harnessName '/Selectable_PMSM_Plant']);
@@ -142,7 +165,10 @@ removeLegacyOneClickAnnotation(modelName);
 set_param(modelName, 'StopTime', '2.0');
 set_param(modelName, 'SolverType', 'Fixed-step', ...
     'Solver', 'FixedStepDiscrete', 'FixedStep', '0.0001');
-setPlantSelection(modelName, 2);
+% Do not compile here: an older on-disk Stateflow integration may be loaded
+% briefly and is rebuilt immediately below by the refactor step.
+modelWorkspace = get_param(modelName, 'ModelWorkspace');
+assignin(modelWorkspace, 'PMSM_PLANT_SELECTION', 2);
 save_system(modelName, modelFile);
 end
 
@@ -297,9 +323,236 @@ end
 end
 
 function simulationOutput = simulatePlant(modelName, selection)
+resetHarnessStimuli(modelName);
 setPlantSelection(modelName, selection);
 set_param(modelName, 'SimulationCommand', 'update');
 simulationOutput = sim(modelName, 'ReturnWorkspaceOutputs', 'on');
+end
+
+function simulationOutput = simulateCalibrationOffset(modelName)
+% Inject known sensor offsets only in the harness and verify that the
+% dedicated 100-sample calibration component estimates and removes them.
+resetHarnessStimuli(modelName);
+modelWorkspace = get_param(modelName, 'ModelWorkspace');
+assignin(modelWorkspace, 'PMSM_TEST_CURRENT_OFFSET_A', single(0.75));
+assignin(modelWorkspace, 'PMSM_TEST_CURRENT_OFFSET_B', single(-0.50));
+stimulusCleanup = onCleanup(@() resetHarnessStimuli(modelName));
+setPlantSelection(modelName, 2);
+simulationOutput = sim(modelName, 'StopTime', '0.085', ...
+    'ReturnWorkspaceOutputs', 'on');
+end
+
+function simulationOutput = simulateOvervoltageFault(modelName)
+% Inject a 70 V DC-bus fault without persisting the test stimulus.
+resetHarnessStimuli(modelName);
+setPlantSelection(modelName, 2);
+dcBusPath = [modelName '/DC_Bus_48V'];
+nominalValue = get_param(dcBusPath, 'Value');
+restoreCleanup = onCleanup(@() set_param(dcBusPath, 'Value', nominalValue));
+set_param(dcBusPath, 'Value', 'single(70.0)');
+simulationOutput = sim(modelName, 'StopTime', '0.02', ...
+    'ReturnWorkspaceOutputs', 'on');
+end
+
+function report = verifyFaultLatchFromEveryState(modelName)
+% Fault pulses clear before each simulation ends and no acknowledgement is
+% supplied. Remaining in FAULT therefore verifies real latching.
+targetStates = 1:5;
+injectionTimes = [0.0 0.002 0.055 0.065 0.090];
+stateNames = {'INIT','READY','CALIB','ALIGN','RUN'};
+scenarioReports = repmat(struct( ...
+    'TargetState', 0, 'TargetName', '', 'InjectionTimeS', 0, ...
+    'VisitedStates', [], 'FinalState', 0, 'FinalFaultDetected', true, ...
+    'FinalPwmEnable', true, 'FinalDuty', NaN, 'Pass', false), ...
+    1, numel(targetStates));
+for scenarioIndex = 1:numel(targetStates)
+    injectionTime = injectionTimes(scenarioIndex);
+    clearTime = injectionTime + 0.001;
+    stopTime = max(clearTime + 0.006, 0.01);
+    output = simulateFaultPulse(modelName, injectionTime, clearTime, ...
+        [], stopTime);
+    scenarioReports(scenarioIndex) = collectLatchedFaultMetrics(output, ...
+        targetStates(scenarioIndex), stateNames{scenarioIndex}, ...
+        injectionTime);
+end
+report.Scenarios = scenarioReports;
+report.Pass = all([scenarioReports.Pass]);
+end
+
+function simulationOutput = simulateAcknowledgedFaultReset(modelName)
+% The fault clears at 4 ms, but the state remains latched until a distinct
+% reset acknowledgement pulse at 8 ms.
+simulationOutput = simulateFaultPulse(modelName, 0.002, 0.004, ...
+    [0.008 0.0082], 0.012);
+end
+
+function simulationOutput = simulateFaultPulse(modelName, injectionTime, ...
+        clearTime, acknowledgementWindow, stopTime)
+resetHarnessStimuli(modelName);
+modelWorkspace = get_param(modelName, 'ModelWorkspace');
+if injectionTime <= 0.0
+    faultSignal = timeseries(logical([1; 0]), [0.0; clearTime]);
+else
+    faultSignal = timeseries(logical([0; 1; 0]), ...
+        [0.0; injectionTime; clearTime]);
+end
+assignin(modelWorkspace, 'PMSM_FAULT_TEST_SIGNAL', faultSignal);
+if isempty(acknowledgementWindow)
+    ackSignal = timeseries(false, 0.0);
+else
+    ackSignal = timeseries(logical([0; 1; 0]), ...
+        [0.0; acknowledgementWindow(1); acknowledgementWindow(2)]);
+end
+assignin(modelWorkspace, 'PMSM_RESET_ACK_SIGNAL', ackSignal);
+stimulusCleanup = onCleanup(@() resetHarnessStimuli(modelName));
+setPlantSelection(modelName, 2);
+simulationOutput = sim(modelName, 'StopTime', num2str(stopTime, '%.9g'), ...
+    'ReturnWorkspaceOutputs', 'on');
+end
+
+function resetHarnessStimuli(modelName)
+modelWorkspace = get_param(modelName, 'ModelWorkspace');
+assignin(modelWorkspace, 'PMSM_TEST_CURRENT_OFFSET_A', single(0.0));
+assignin(modelWorkspace, 'PMSM_TEST_CURRENT_OFFSET_B', single(0.0));
+assignin(modelWorkspace, 'PMSM_FAULT_TEST_SIGNAL', timeseries(false, 0.0));
+assignin(modelWorkspace, 'PMSM_RESET_ACK_SIGNAL', timeseries(false, 0.0));
+end
+
+function report = collectStateflowMetrics(simulationOutput)
+report.StateSeries = simulationOutput.get('motor_state_code');
+report.ControlEnableSeries = simulationOutput.get('motor_control_enable');
+report.PwmEnableSeries = simulationOutput.get('motor_pwm_enable');
+report.CalibrationEnableSeries = simulationOutput.get('motor_calibration_enable');
+report.CalibrationDoneSeries = simulationOutput.get('motor_calibration_done');
+report.AlignmentEnableSeries = simulationOutput.get('motor_alignment_enable');
+report.AppliedVdSeries = simulationOutput.get('motor_applied_vd');
+report.AppliedVqSeries = simulationOutput.get('motor_applied_vq');
+stateValues = double(report.StateSeries.Data);
+report.VisitedStates = unique(stateValues(:))';
+runIndex = find(stateValues == 5, 1, 'first');
+if isempty(runIndex)
+    report.RunEntryTimeS = NaN;
+else
+    report.RunEntryTimeS = double(report.StateSeries.Time(runIndex));
+end
+report.FinalState = stateValues(end);
+report.FinalControlEnable = logical(report.ControlEnableSeries.Data(end));
+report.FinalPwmEnable = logical(report.PwmEnableSeries.Data(end));
+calibrationIndex = stateValues == 3;
+alignmentIndex = stateValues == 4;
+report.CalibrationPass = any(calibrationIndex) && ...
+    all(logical(report.CalibrationEnableSeries.Data(calibrationIndex)));
+report.AlignmentPass = any(alignmentIndex) && ...
+    all(logical(report.AlignmentEnableSeries.Data(alignmentIndex))) && ...
+    all(logical(report.PwmEnableSeries.Data(alignmentIndex))) && ...
+    max(abs(double(report.AppliedVdSeries.Data(alignmentIndex)) - 2.0)) < 1e-6 && ...
+    max(abs(double(report.AppliedVqSeries.Data(alignmentIndex)))) < 1e-6;
+report.Pass = isequal(report.VisitedStates, 1:5) && ...
+    isfinite(report.RunEntryTimeS) && ...
+    abs(report.RunEntryTimeS - 0.08) <= 0.0003 && ...
+    report.FinalState == 5 && report.FinalControlEnable && ...
+    report.FinalPwmEnable && report.CalibrationPass && report.AlignmentPass;
+end
+
+function report = collectCalibrationMetrics(simulationOutput)
+offsetA = simulationOutput.get('motor_current_offset_a');
+offsetB = simulationOutput.get('motor_current_offset_b');
+correctedA = simulationOutput.get('motor_corrected_current_a');
+correctedB = simulationOutput.get('motor_corrected_current_b');
+calibrationDone = simulationOutput.get('motor_calibration_done');
+stateSeries = simulationOutput.get('motor_state_code');
+doneIndex = find(logical(calibrationDone.Data), 1, 'first');
+if isempty(doneIndex)
+    report.CompletionTimeS = NaN;
+    report.EstimatedOffsetA = NaN;
+    report.EstimatedOffsetB = NaN;
+    report.CorrectedCurrentAAtCompletion = NaN;
+    report.CorrectedCurrentBAtCompletion = NaN;
+else
+    report.CompletionTimeS = double(calibrationDone.Time(doneIndex));
+    report.EstimatedOffsetA = double(offsetA.Data(doneIndex));
+    report.EstimatedOffsetB = double(offsetB.Data(doneIndex));
+    report.CorrectedCurrentAAtCompletion = double(correctedA.Data(doneIndex));
+    report.CorrectedCurrentBAtCompletion = double(correctedB.Data(doneIndex));
+end
+report.VisitedStates = unique(double(stateSeries.Data(:)))';
+report.Pass = isfinite(report.CompletionTimeS) && ...
+    abs(report.EstimatedOffsetA - 0.75) < 1e-4 && ...
+    abs(report.EstimatedOffsetB + 0.50) < 1e-4 && ...
+    abs(report.CorrectedCurrentAAtCompletion) < 1e-3 && ...
+    abs(report.CorrectedCurrentBAtCompletion) < 1e-3 && ...
+    any(report.VisitedStates == 4);
+end
+
+function report = collectLatchedFaultMetrics(simulationOutput, targetState, ...
+        targetName, injectionTime)
+stateSeries = simulationOutput.get('motor_state_code');
+faultSeries = simulationOutput.get('motor_fault_detected');
+pwmSeries = simulationOutput.get('motor_pwm_enable');
+dutySeries = simulationOutput.get('native_duty_a');
+stateValues = double(stateSeries.Data);
+report.TargetState = targetState;
+report.TargetName = targetName;
+report.InjectionTimeS = injectionTime;
+report.VisitedStates = unique(stateValues(:))';
+report.FinalState = stateValues(end);
+report.FinalFaultDetected = logical(faultSeries.Data(end));
+report.FinalPwmEnable = logical(pwmSeries.Data(end));
+report.FinalDuty = double(dutySeries.Data(end));
+report.Pass = any(report.VisitedStates == targetState) && ...
+    any(report.VisitedStates == 6) && report.FinalState == 6 && ...
+    ~report.FinalFaultDetected && ~report.FinalPwmEnable && ...
+    abs(report.FinalDuty - 0.5) < 1e-6;
+end
+
+function report = collectFaultResetMetrics(simulationOutput)
+stateSeries = simulationOutput.get('motor_state_code');
+faultSeries = simulationOutput.get('motor_fault_detected');
+ackSeries = simulationOutput.get('motor_reset_ack');
+stateValues = double(stateSeries.Data);
+holdIndex = find(stateSeries.Time >= 0.006, 1, 'first');
+postAckIndex = find(stateSeries.Time >= 0.008, 1, 'first');
+resetIndex = [];
+if ~isempty(postAckIndex)
+    relativeIndex = find(stateValues(postAckIndex:end) ~= 6, 1, 'first');
+    if ~isempty(relativeIndex)
+        resetIndex = postAckIndex + relativeIndex - 1;
+    end
+end
+report.VisitedStates = unique(stateValues(:))';
+report.FaultHeldAfterSourceClear = ~isempty(holdIndex) && ...
+    stateValues(holdIndex) == 6 && ~logical(faultSeries.Data(holdIndex));
+report.AcknowledgementObserved = any(logical(ackSeries.Data));
+if isempty(resetIndex)
+    report.ResetExitTimeS = NaN;
+else
+    report.ResetExitTimeS = double(stateSeries.Time(resetIndex));
+end
+report.FinalState = stateValues(end);
+report.Pass = any(report.VisitedStates == 6) && ...
+    report.FaultHeldAfterSourceClear && report.AcknowledgementObserved && ...
+    isfinite(report.ResetExitTimeS) && report.ResetExitTimeS >= 0.008 && ...
+    report.FinalState == 2;
+end
+
+function report = collectFaultMetrics(simulationOutput)
+report.StateSeries = simulationOutput.get('motor_state_code');
+report.PwmEnableSeries = simulationOutput.get('motor_pwm_enable');
+report.DutySeries = simulationOutput.get('native_duty_a');
+stateValues = double(report.StateSeries.Data);
+report.VisitedStates = unique(stateValues(:))';
+faultIndex = find(stateValues == 6, 1, 'first');
+if isempty(faultIndex)
+    report.FaultEntryTimeS = NaN;
+else
+    report.FaultEntryTimeS = double(report.StateSeries.Time(faultIndex));
+end
+report.FinalState = stateValues(end);
+report.FinalPwmEnable = logical(report.PwmEnableSeries.Data(end));
+report.FinalDuty = double(report.DutySeries.Data(end));
+report.Pass = any(report.VisitedStates == 6) && ...
+    report.FinalState == 6 && ~report.FinalPwmEnable && ...
+    abs(report.FinalDuty - 0.5) < 1e-6;
 end
 
 function setPlantSelection(modelName, selection)
@@ -398,6 +651,111 @@ exportgraphics(figureHandle, fullfile(versionDirectory, ...
 close(figureHandle);
 end
 
+function createStateflowTestPlot(normalOutput, calibrationOutput, faultOutput, ...
+        resetOutput, versionDirectory)
+normalState = normalOutput.get('motor_state_code');
+normalControl = normalOutput.get('motor_control_enable');
+normalPwm = normalOutput.get('motor_pwm_enable');
+normalCalibration = normalOutput.get('motor_calibration_enable');
+normalAlignment = normalOutput.get('motor_alignment_enable');
+calibrationOffsetA = calibrationOutput.get('motor_current_offset_a');
+calibrationOffsetB = calibrationOutput.get('motor_current_offset_b');
+calibrationCorrectedA = calibrationOutput.get('motor_corrected_current_a');
+calibrationCorrectedB = calibrationOutput.get('motor_corrected_current_b');
+faultState = faultOutput.get('motor_state_code');
+faultPwm = faultOutput.get('motor_pwm_enable');
+faultDuty = faultOutput.get('native_duty_a');
+resetState = resetOutput.get('motor_state_code');
+resetFault = resetOutput.get('motor_fault_detected');
+resetAck = resetOutput.get('motor_reset_ack');
+
+figureHandle = figure('Visible', 'off', 'Color', 'white', ...
+    'Position', [100 100 1280 1050]);
+layout = tiledlayout(figureHandle, 4, 1, 'TileSpacing', 'compact', ...
+    'Padding', 'compact');
+
+nexttile(layout);
+stairs(normalState.Time, double(normalState.Data), 'LineWidth', 1.5);
+hold on;
+stairs(normalControl.Time, 6.3 * double(normalControl.Data), '--', ...
+    'LineWidth', 1.2);
+stairs(normalPwm.Time, 6.0 * double(normalPwm.Data), ':', ...
+    'LineWidth', 1.2);
+stairs(normalCalibration.Time, 5.7 * double(normalCalibration.Data), '-.', ...
+    'LineWidth', 1.1);
+stairs(normalAlignment.Time, 5.4 * double(normalAlignment.Data), '--', ...
+    'LineWidth', 1.1);
+grid on;
+xlim([0 0.12]);
+ylim([0.5 6.7]);
+yticks(1:6);
+yticklabels({'INIT','READY','CALIB','ALIGN','RUN','FAULT'});
+xlabel('Time (s)');
+ylabel('Motor state');
+legend('State code', 'Control enable', 'PWM enable', ...
+    'Calibration enable', 'Alignment enable', ...
+    'Location', 'eastoutside');
+title('Normal startup: CALIB averaging, ALIGN voltage application, then RUN');
+
+nexttile(layout);
+plot(calibrationOffsetA.Time, calibrationOffsetA.Data, 'LineWidth', 1.3);
+hold on;
+plot(calibrationOffsetB.Time, calibrationOffsetB.Data, 'LineWidth', 1.3);
+plot(calibrationCorrectedA.Time, calibrationCorrectedA.Data, '--', ...
+    'LineWidth', 1.0);
+plot(calibrationCorrectedB.Time, calibrationCorrectedB.Data, '--', ...
+    'LineWidth', 1.0);
+grid on;
+xlim([0.048 0.065]);
+xlabel('Time (s)');
+ylabel('Current / offset (A)');
+legend('Estimated offset A', 'Estimated offset B', ...
+    'Corrected current A', 'Corrected current B', ...
+    'Location', 'eastoutside');
+title('100-sample current-offset calibration: injected +0.75 A / -0.50 A');
+
+nexttile(layout);
+stairs(faultState.Time, double(faultState.Data), 'LineWidth', 1.5);
+hold on;
+stairs(faultPwm.Time, 6.0 * double(faultPwm.Data), '--', ...
+    'LineWidth', 1.2);
+stairs(faultDuty.Time, 2.0 * double(faultDuty.Data), ':', ...
+    'LineWidth', 1.2);
+grid on;
+xlim([0 0.02]);
+ylim([0.5 6.7]);
+yticks(1:6);
+yticklabels({'INIT','READY','CALIB','ALIGN','RUN','FAULT'});
+xlabel('Time (s)');
+ylabel('Motor state');
+legend('State code', 'PWM enable (scaled)', 'Duty A x 2', ...
+    'Location', 'eastoutside');
+title('70 V overvoltage injection: FAULT with PWM disabled and 50% safe duty');
+
+nexttile(layout);
+stairs(resetState.Time, double(resetState.Data), 'LineWidth', 1.5);
+hold on;
+stairs(resetFault.Time, 5.8 * double(resetFault.Data), '--', ...
+    'LineWidth', 1.2);
+stairs(resetAck.Time, 5.4 * squeeze(double(resetAck.Data)), ':', ...
+    'LineWidth', 1.2);
+grid on;
+xlim([0 0.012]);
+ylim([0.5 6.3]);
+yticks(1:6);
+yticklabels({'INIT','READY','CALIB','ALIGN','RUN','FAULT'});
+xlabel('Time (s)');
+ylabel('Motor state');
+legend('State code', 'Fault source (scaled)', 'Reset acknowledgement (scaled)', ...
+    'Location', 'eastoutside');
+title('FAULT remains latched after source clears; explicit acknowledgement releases it');
+
+title(layout, 'PMSM FOC Stateflow verification v2.1.0');
+exportgraphics(figureHandle, fullfile(versionDirectory, ...
+    'PMSM_FOC_DualPlant_v21_stateflow_results.png'), 'Resolution', 180);
+close(figureHandle);
+end
+
 function exportArchitectureImages(controllerName, modelName, versionDirectory)
 overviewPath = fullfile(versionDirectory, ...
     'PMSM_FOC_DualPlant_v21_architecture.png');
@@ -406,6 +764,9 @@ plantImagePath = fullfile(versionDirectory, ...
     'PMSM_FOC_DualPlant_v21_plant_variants.png');
 controllerImagePath = fullfile(versionDirectory, ...
     'PMSM_FOC_DualPlant_v21_controller_architecture.png');
+stateflowPath = [modelName '/Motor_State_Machine_100us'];
+stateflowImagePath = fullfile(versionDirectory, ...
+    'PMSM_FOC_DualPlant_v21_stateflow_architecture.png');
 
 open_system(modelName);
 print(['-s' modelName], '-dpng', '-r160', overviewPath);
@@ -414,6 +775,8 @@ print(['-s' plantPath], '-dpng', '-r160', plantImagePath);
 open_system(controllerName);
 set_param(controllerName, 'ZoomFactor', 'FitSystem');
 print(['-s' controllerName], '-dpng', '-r180', controllerImagePath);
+open_system(stateflowPath);
+print(['-s' stateflowPath], '-dpng', '-r180', stateflowImagePath);
 end
 
 function report = inspectVariantStructure(modelName)
@@ -449,15 +812,19 @@ report.HasInputs = contains(headerText, 'External inputs');
 report.HasOutputs = contains(headerText, 'External outputs');
 report.HasSFunction = contains(lower(sourceText), 's-function') || ...
     contains(lower(headerText), 's-function');
+report.HasStateflow = contains(sourceText, 'Motor_State_Machine_100us') || ...
+    contains(sourceText, 'is_active_');
 report.Pass = report.HasStep && report.HasInitialize && report.HasInputs && ...
-    report.HasOutputs && ~report.HasSFunction;
+    report.HasOutputs && report.HasStateflow && ~report.HasSFunction;
 end
 
 function report = inspectControllerArchitecture(controllerName, harnessName)
 componentPaths = {'Speed_PI_Controller_1ms', ...
+    'Current_Offset_Calibration_100us', ...
     'Clarke_Transform', 'Park_Transform', ...
     'D_Axis_Current_PI', 'Q_Axis_Current_PI', ...
     'DQ_Decoupling_Feedforward', 'DQ_Voltage_Command', ...
+    'Alignment_DQ_Override_100us', ...
     'Inverse_Park_Transform', 'Inverse_Clarke_Transform', ...
     'SVPWM_Duty_Calculation'};
 report.ComponentCount = numel(componentPaths);
@@ -469,6 +836,75 @@ report.ControllerRateTransitionPresent = getSimulinkBlockHandle( ...
     [controllerName '/IqRef_Rate_Transition']) ~= -1;
 report.HarnessRateTransitionPresent = getSimulinkBlockHandle( ...
     [harnessName '/IqRef_Rate_Transition']) ~= -1;
+report.ControllerSafetyMonitorPresent = getSimulinkBlockHandle( ...
+    [controllerName '/Motor_Safety_Monitor_100us']) ~= -1;
+report.HarnessSafetyMonitorPresent = getSimulinkBlockHandle( ...
+    [harnessName '/Motor_Safety_Monitor_100us']) ~= -1;
+stateflowRoot = sfroot;
+stateflowMachine = stateflowRoot.find('-isa', 'Stateflow.Machine', ...
+    'Name', controllerName);
+stateflowChart = stateflowMachine.find('-isa', 'Stateflow.Chart', ...
+    'Name', 'Motor_State_Machine_100us');
+report.StateflowPresent = ~isempty(stateflowChart);
+if report.StateflowPresent
+    stateflowChart = stateflowChart(1);
+    operationalStateNames = {'INIT','READY','CALIB','ALIGN','RUN','FAULT'};
+    report.StateflowStateCount = sum(cellfun(@(stateName) ~isempty( ...
+        stateflowChart.find('-isa', 'Stateflow.State', 'Name', stateName)), ...
+        operationalStateNames));
+    report.StateflowSuperstatePresent = ~isempty(stateflowChart.find( ...
+        '-isa', 'Stateflow.State', 'Name', 'SUPERVISED'));
+    report.StateflowSampleTime = str2double(stateflowChart.SampleTime);
+    report.ResetAckInputPresent = ~isempty(stateflowChart.find( ...
+        '-isa', 'Stateflow.Data', 'Name', 'ResetAck'));
+    report.CalibrationDoneInputPresent = ~isempty(stateflowChart.find( ...
+        '-isa', 'Stateflow.Data', 'Name', 'CalibrationDone'));
+    report.AlignmentEnableOutputPresent = ~isempty(stateflowChart.find( ...
+        '-isa', 'Stateflow.Data', 'Name', 'AlignmentEnable'));
+    report.ControllerResetOutputPresent = ~isempty(stateflowChart.find( ...
+        '-isa', 'Stateflow.Data', 'Name', 'ControllerReset'));
+    report.AcknowledgedFaultTransitionPresent = hasStateflowTransition( ...
+        stateflowChart, 'FAULT', 'INIT', 'ResetAck');
+    report.CalibrationDoneTransitionPresent = hasStateflowTransition( ...
+        stateflowChart, 'CALIB', 'ALIGN', 'CalibrationDone');
+    report.RunStopToInitPresent = hasStateflowTransition( ...
+        stateflowChart, 'RUN', 'INIT', '!StartCmd');
+    report.AlignStopToInitPresent = hasStateflowTransition( ...
+        stateflowChart, 'ALIGN', 'INIT', '!StartCmd');
+else
+    report.StateflowStateCount = 0;
+    report.StateflowSuperstatePresent = false;
+    report.StateflowSampleTime = NaN;
+    report.ResetAckInputPresent = false;
+    report.CalibrationDoneInputPresent = false;
+    report.AlignmentEnableOutputPresent = false;
+    report.ControllerResetOutputPresent = false;
+    report.AcknowledgedFaultTransitionPresent = false;
+    report.CalibrationDoneTransitionPresent = false;
+    report.RunStopToInitPresent = false;
+    report.AlignStopToInitPresent = false;
+end
+controllerInports = find_system(controllerName, 'SearchDepth', 1, ...
+    'BlockType', 'Inport');
+controllerOutports = find_system(controllerName, 'SearchDepth', 1, ...
+    'BlockType', 'Outport');
+report.ControllerInputCount = numel(controllerInports);
+report.ControllerOutputCount = numel(controllerOutports);
+report.FaultResetAckPortPresent = getSimulinkBlockHandle( ...
+    [controllerName '/FaultResetAck']) ~= -1;
+report.CalibrationComponentPresent = getSimulinkBlockHandle( ...
+    [controllerName '/Current_Offset_Calibration_100us']) ~= -1 && ...
+    getSimulinkBlockHandle( ...
+    [harnessName '/Current_Offset_Calibration_100us']) ~= -1;
+report.AlignmentComponentPresent = getSimulinkBlockHandle( ...
+    [controllerName '/Alignment_DQ_Override_100us']) ~= -1 && ...
+    getSimulinkBlockHandle( ...
+    [harnessName '/Alignment_DQ_Override_100us']) ~= -1;
+speedPiPorts = get_param([controllerName '/Speed_PI_Controller_1ms'], 'Ports');
+dPiPorts = get_param([controllerName '/D_Axis_Current_PI'], 'Ports');
+qPiPorts = get_param([controllerName '/Q_Axis_Current_PI'], 'Ports');
+report.PiResetPortsPresent = speedPiPorts(1) == 3 && ...
+    dPiPorts(1) == 3 && qPiPorts(1) == 3;
 report.SpeedTaskSampleTime = str2double(get_param( ...
     [controllerName '/Speed_PI_Controller_1ms/Integrator_State'], 'SampleTime'));
 report.CurrentTaskSampleTime = str2double(get_param( ...
@@ -480,10 +916,40 @@ report.Pass = report.ControllerComponentsPresent && ...
     report.HarnessComponentsPresent && ...
     report.ControllerRateTransitionPresent && ...
     report.HarnessRateTransitionPresent && ...
+    report.ControllerSafetyMonitorPresent && ...
+    report.HarnessSafetyMonitorPresent && report.StateflowPresent && ...
+    report.StateflowStateCount == 6 && report.StateflowSuperstatePresent && ...
+    report.ResetAckInputPresent && report.CalibrationDoneInputPresent && ...
+    report.AlignmentEnableOutputPresent && report.ControllerResetOutputPresent && ...
+    report.AcknowledgedFaultTransitionPresent && ...
+    report.CalibrationDoneTransitionPresent && report.RunStopToInitPresent && ...
+    report.AlignStopToInitPresent && report.ControllerInputCount == 7 && ...
+    report.ControllerOutputCount == 8 && report.FaultResetAckPortPresent && ...
+    report.CalibrationComponentPresent && report.AlignmentComponentPresent && ...
+    report.PiResetPortsPresent && ...
+    abs(report.StateflowSampleTime - 0.0001) < eps && ...
     abs(report.SpeedTaskSampleTime - 0.001) < eps && ...
     abs(report.CurrentTaskSampleTime - 0.0001) < eps && ...
     report.ControllerDanglingLines == 0 && ...
     report.HarnessDanglingLines == 0;
+end
+
+function present = hasStateflowTransition(chart, sourceName, ...
+        destinationName, labelFragment)
+present = false;
+transitions = chart.find('-isa', 'Stateflow.Transition');
+for transitionIndex = 1:numel(transitions)
+    transition = transitions(transitionIndex);
+    if isempty(transition.Source) || isempty(transition.Destination)
+        continue;
+    end
+    if strcmp(transition.Source.Name, sourceName) && ...
+            strcmp(transition.Destination.Name, destinationName) && ...
+            contains(transition.LabelString, labelFragment)
+        present = true;
+        return;
+    end
+end
 end
 
 function count = countDanglingLines(parent)
@@ -501,7 +967,8 @@ end
 
 function writeVerificationReport(versionDirectory, controllerName, harnessName, ...
         nativeMetrics, mcbMetrics, nativePass, mcbPass, variantReport, ...
-        architectureReport, codeReport)
+        architectureReport, codeReport, stateflowReport, calibrationReport, ...
+        faultReport, faultMatrixReport, faultResetReport)
 reportPath = fullfile(versionDirectory, 'verification_report.txt');
 reportHandle = fopen(reportPath, 'w');
 assert(reportHandle ~= -1, 'Unable to create verification report.');
@@ -517,6 +984,10 @@ fprintf(reportHandle, 'MathWorks reference verified: %d\n', variantReport.McbRef
 fprintf(reportHandle, 'Callback button present: %d\n', variantReport.CallbackButtonPresent);
 fprintf(reportHandle, 'One-click switch control present: %d\n', variantReport.OneClickLinkPresent);
 fprintf(reportHandle, 'FOC component count: %d\n', architectureReport.ComponentCount);
+fprintf(reportHandle, 'Controller input count: %d\n', ...
+    architectureReport.ControllerInputCount);
+fprintf(reportHandle, 'Controller output count: %d\n', ...
+    architectureReport.ControllerOutputCount);
 fprintf(reportHandle, 'Controller components present: %d\n', ...
     architectureReport.ControllerComponentsPresent);
 fprintf(reportHandle, 'Harness components present: %d\n', ...
@@ -525,6 +996,34 @@ fprintf(reportHandle, 'Controller rate transition present: %d\n', ...
     architectureReport.ControllerRateTransitionPresent);
 fprintf(reportHandle, 'Harness rate transition present: %d\n', ...
     architectureReport.HarnessRateTransitionPresent);
+fprintf(reportHandle, 'Controller safety monitor present: %d\n', ...
+    architectureReport.ControllerSafetyMonitorPresent);
+fprintf(reportHandle, 'Harness safety monitor present: %d\n', ...
+    architectureReport.HarnessSafetyMonitorPresent);
+fprintf(reportHandle, 'Stateflow chart present: %d\n', ...
+    architectureReport.StateflowPresent);
+fprintf(reportHandle, 'Stateflow state count: %d\n', ...
+    architectureReport.StateflowStateCount);
+fprintf(reportHandle, 'Stateflow SUPERVISED domain present: %d\n', ...
+    architectureReport.StateflowSuperstatePresent);
+fprintf(reportHandle, 'Explicit FaultResetAck port present: %d\n', ...
+    architectureReport.FaultResetAckPortPresent);
+fprintf(reportHandle, 'Acknowledged FAULT reset transition present: %d\n', ...
+    architectureReport.AcknowledgedFaultTransitionPresent);
+fprintf(reportHandle, 'CALIB done transition present: %d\n', ...
+    architectureReport.CalibrationDoneTransitionPresent);
+fprintf(reportHandle, 'RUN stop to INIT transition present: %d\n', ...
+    architectureReport.RunStopToInitPresent);
+fprintf(reportHandle, 'ALIGN stop to INIT transition present: %d\n', ...
+    architectureReport.AlignStopToInitPresent);
+fprintf(reportHandle, 'Current offset calibration component present: %d\n', ...
+    architectureReport.CalibrationComponentPresent);
+fprintf(reportHandle, 'Alignment DQ override component present: %d\n', ...
+    architectureReport.AlignmentComponentPresent);
+fprintf(reportHandle, 'PI reset ports present: %d\n', ...
+    architectureReport.PiResetPortsPresent);
+fprintf(reportHandle, 'Stateflow task sample time s: %.9g\n', ...
+    architectureReport.StateflowSampleTime);
 fprintf(reportHandle, 'Speed task sample time s: %.9g\n', ...
     architectureReport.SpeedTaskSampleTime);
 fprintf(reportHandle, 'Current task sample time s: %.9g\n', ...
@@ -535,12 +1034,72 @@ fprintf(reportHandle, 'Harness dangling line count: %d\n', ...
     architectureReport.HarnessDanglingLines);
 fprintf(reportHandle, 'Component architecture verification pass: %d\n', ...
     architectureReport.Pass);
+fprintf(reportHandle, 'Stateflow normal visited states: %s\n', ...
+    mat2str(stateflowReport.VisitedStates));
+fprintf(reportHandle, 'Stateflow RUN entry time s: %.9g\n', ...
+    stateflowReport.RunEntryTimeS);
+fprintf(reportHandle, 'Stateflow normal final state: %d\n', ...
+    stateflowReport.FinalState);
+fprintf(reportHandle, 'Stateflow normal verification pass: %d\n', ...
+    stateflowReport.Pass);
+fprintf(reportHandle, 'CALIB action verification pass: %d\n', ...
+    stateflowReport.CalibrationPass);
+fprintf(reportHandle, 'ALIGN action verification pass: %d\n', ...
+    stateflowReport.AlignmentPass);
+fprintf(reportHandle, 'Calibration injected offset A: 0.75\n');
+fprintf(reportHandle, 'Calibration injected offset B: -0.5\n');
+fprintf(reportHandle, 'Calibration estimated offset A: %.9g\n', ...
+    calibrationReport.EstimatedOffsetA);
+fprintf(reportHandle, 'Calibration estimated offset B: %.9g\n', ...
+    calibrationReport.EstimatedOffsetB);
+fprintf(reportHandle, 'Calibration corrected current A at completion: %.9g\n', ...
+    calibrationReport.CorrectedCurrentAAtCompletion);
+fprintf(reportHandle, 'Calibration corrected current B at completion: %.9g\n', ...
+    calibrationReport.CorrectedCurrentBAtCompletion);
+fprintf(reportHandle, 'Calibration completion time s: %.9g\n', ...
+    calibrationReport.CompletionTimeS);
+fprintf(reportHandle, 'Calibration numeric verification pass: %d\n', ...
+    calibrationReport.Pass);
+fprintf(reportHandle, 'Fault injection DC bus V: 70\n');
+fprintf(reportHandle, 'Fault visited states: %s\n', ...
+    mat2str(faultReport.VisitedStates));
+fprintf(reportHandle, 'FAULT entry time s: %.9g\n', ...
+    faultReport.FaultEntryTimeS);
+fprintf(reportHandle, 'Fault final state: %d\n', faultReport.FinalState);
+fprintf(reportHandle, 'Fault final PWM enable: %d\n', ...
+    faultReport.FinalPwmEnable);
+fprintf(reportHandle, 'Fault final duty: %.9g\n', faultReport.FinalDuty);
+fprintf(reportHandle, 'Stateflow fault verification pass: %d\n', ...
+    faultReport.Pass);
+for scenarioIndex = 1:numel(faultMatrixReport.Scenarios)
+    scenario = faultMatrixReport.Scenarios(scenarioIndex);
+    fprintf(reportHandle, 'Fault latch from %s visited states: %s\n', ...
+        scenario.TargetName, mat2str(scenario.VisitedStates));
+    fprintf(reportHandle, 'Fault latch from %s final source active: %d\n', ...
+        scenario.TargetName, scenario.FinalFaultDetected);
+    fprintf(reportHandle, 'Fault latch from %s pass: %d\n', ...
+        scenario.TargetName, scenario.Pass);
+end
+fprintf(reportHandle, 'Fault latch from every operational state pass: %d\n', ...
+    faultMatrixReport.Pass);
+fprintf(reportHandle, 'Fault held after source clear before acknowledgement: %d\n', ...
+    faultResetReport.FaultHeldAfterSourceClear);
+fprintf(reportHandle, 'Fault reset acknowledgement observed: %d\n', ...
+    faultResetReport.AcknowledgementObserved);
+fprintf(reportHandle, 'Fault acknowledged reset exit time s: %.9g\n', ...
+    faultResetReport.ResetExitTimeS);
+fprintf(reportHandle, 'Fault acknowledged reset final state: %d\n', ...
+    faultResetReport.FinalState);
+fprintf(reportHandle, 'Fault acknowledged reset verification pass: %d\n', ...
+    faultResetReport.Pass);
 writeMetrics(reportHandle, 'Native', nativeMetrics, nativePass);
 writeMetrics(reportHandle, 'MathWorks MCB PMSM HDL', mcbMetrics, mcbPass);
 fprintf(reportHandle, 'ERT step present: %d\n', codeReport.HasStep);
 fprintf(reportHandle, 'ERT initialize present: %d\n', codeReport.HasInitialize);
 fprintf(reportHandle, 'ERT inputs present: %d\n', codeReport.HasInputs);
 fprintf(reportHandle, 'ERT outputs present: %d\n', codeReport.HasOutputs);
+fprintf(reportHandle, 'Generated Stateflow logic present: %d\n', ...
+    codeReport.HasStateflow);
 fprintf(reportHandle, 'Generated S-Function text present: %d\n', codeReport.HasSFunction);
 fprintf(reportHandle, 'Code verification pass: %d\n', codeReport.Pass);
 end

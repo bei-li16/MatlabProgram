@@ -8,33 +8,92 @@ MathWorks reference: mcbhdlplantlib/PMSM HDL
 MathWorks reference verified: 1
 Callback button present: 1
 One-click switch control present: 1
-FOC component count: 10
+FOC component count: 12
+Controller input count: 7
+Controller output count: 8
 Controller components present: 1
 Harness components present: 1
 Controller rate transition present: 1
 Harness rate transition present: 1
+Controller safety monitor present: 1
+Harness safety monitor present: 1
+Stateflow chart present: 1
+Stateflow state count: 6
+Stateflow SUPERVISED domain present: 1
+Explicit FaultResetAck port present: 1
+Acknowledged FAULT reset transition present: 1
+CALIB done transition present: 1
+RUN stop to INIT transition present: 1
+ALIGN stop to INIT transition present: 1
+Current offset calibration component present: 1
+Alignment DQ override component present: 1
+PI reset ports present: 1
+Stateflow task sample time s: 0.0001
 Speed task sample time s: 0.001
 Current task sample time s: 0.0001
 Controller dangling line count: 0
 Harness dangling line count: 0
 Component architecture verification pass: 1
-Native final speed rpm: 992.876831
-Native maximum speed rpm: 1084.82007
-Native maximum abs Iq A: 2.14349937
-Native duty minimum: 0.0849412978
-Native duty maximum: 0.915064812
-Native final torque Nm: 0.204457477
+Stateflow normal visited states: [1 2 3 4 5]
+Stateflow RUN entry time s: 0.08
+Stateflow normal final state: 5
+Stateflow normal verification pass: 1
+CALIB action verification pass: 1
+ALIGN action verification pass: 1
+Calibration injected offset A: 0.75
+Calibration injected offset B: -0.5
+Calibration estimated offset A: 0.75
+Calibration estimated offset B: -0.5
+Calibration corrected current A at completion: 0
+Calibration corrected current B at completion: 0
+Calibration completion time s: 0.06
+Calibration numeric verification pass: 1
+Fault injection DC bus V: 70
+Fault visited states: [1 6]
+FAULT entry time s: 0.0001
+Fault final state: 6
+Fault final PWM enable: 0
+Fault final duty: 0.5
+Stateflow fault verification pass: 1
+Fault latch from INIT visited states: [1 6]
+Fault latch from INIT final source active: 0
+Fault latch from INIT pass: 1
+Fault latch from READY visited states: [1 2 6]
+Fault latch from READY final source active: 0
+Fault latch from READY pass: 1
+Fault latch from CALIB visited states: [1 2 3 6]
+Fault latch from CALIB final source active: 0
+Fault latch from CALIB pass: 1
+Fault latch from ALIGN visited states: [1 2 3 4 6]
+Fault latch from ALIGN final source active: 0
+Fault latch from ALIGN pass: 1
+Fault latch from RUN visited states: [1 2 3 4 5 6]
+Fault latch from RUN final source active: 0
+Fault latch from RUN pass: 1
+Fault latch from every operational state pass: 1
+Fault held after source clear before acknowledgement: 1
+Fault reset acknowledgement observed: 1
+Fault acknowledged reset exit time s: 0.008
+Fault acknowledged reset final state: 2
+Fault acknowledged reset verification pass: 1
+Native final speed rpm: 996.191467
+Native maximum speed rpm: 1084.8656
+Native maximum abs Iq A: 2.14349961
+Native duty minimum: 0.0849514306
+Native duty maximum: 0.915057063
+Native final torque Nm: 0.201538101
 Native simulation pass: 1
-MathWorks MCB PMSM HDL final speed rpm: 992.87677
-MathWorks MCB PMSM HDL maximum speed rpm: 1084.82007
+MathWorks MCB PMSM HDL final speed rpm: 996.191345
+MathWorks MCB PMSM HDL maximum speed rpm: 1084.8656
 MathWorks MCB PMSM HDL maximum abs Iq A: 2.14349937
-MathWorks MCB PMSM HDL duty minimum: 0.0849412978
-MathWorks MCB PMSM HDL duty maximum: 0.915064812
-MathWorks MCB PMSM HDL final torque Nm: 0.204457372
+MathWorks MCB PMSM HDL duty minimum: 0.0849514306
+MathWorks MCB PMSM HDL duty maximum: 0.915057063
+MathWorks MCB PMSM HDL final torque Nm: 0.201538414
 MathWorks MCB PMSM HDL simulation pass: 1
 ERT step present: 1
 ERT initialize present: 1
 ERT inputs present: 1
 ERT outputs present: 1
+Generated Stateflow logic present: 1
 Generated S-Function text present: 0
 Code verification pass: 1
