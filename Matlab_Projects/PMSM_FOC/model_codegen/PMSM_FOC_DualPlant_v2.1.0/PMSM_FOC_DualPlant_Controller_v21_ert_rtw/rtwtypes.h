@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'PMSM_FOC_DualPlant_Controller_v21'.
  *
- * Model version                  : 1.33
+ * Model version                  : 1.42
  * Simulink Coder version         : 24.1 (R2024a) 19-Nov-2023
- * C/C++ source code generated on : Fri Aug 28 17:17:17 2026
+ * C/C++ source code generated on : Sat Aug 29 03:10:30 2026
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: Intel->x86-64 (Windows64)

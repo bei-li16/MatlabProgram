@@ -8,15 +8,19 @@ MathWorks reference: mcbhdlplantlib/PMSM HDL
 MathWorks reference verified: 1
 Callback button present: 1
 One-click switch control present: 1
-FOC component count: 12
+FOC component count: 13
 Controller input count: 7
 Controller output count: 8
 Controller components present: 1
 Harness components present: 1
-Controller rate transition present: 1
-Harness rate transition present: 1
+Controller explicit task boundaries present: 1
+Harness explicit task boundaries present: 1
 Controller safety monitor present: 1
 Harness safety monitor present: 1
+Controller 100 us fast safety gate present: 1
+Harness 100 us fast safety gate present: 1
+Controller 1 ms slow safety monitor present: 1
+Harness 1 ms slow safety monitor present: 1
 Stateflow chart present: 1
 Stateflow state count: 6
 Stateflow SUPERVISED domain present: 1
@@ -28,9 +32,12 @@ ALIGN stop to INIT transition present: 1
 Current offset calibration component present: 1
 Alignment DQ override component present: 1
 PI reset ports present: 1
-Stateflow task sample time s: 0.0001
+Stateflow task sample time s: 0.001
 Speed task sample time s: 0.001
 Current task sample time s: 0.0001
+Fast safety task sample time s: 0.0001
+Slow safety task sample time s: 0.001
+Shared electrical-angle trig component present: 1
 Controller dangling line count: 0
 Harness dangling line count: 0
 Component architecture verification pass: 1
@@ -50,11 +57,17 @@ Calibration completion time s: 0.06
 Calibration numeric verification pass: 1
 Fault injection DC bus V: 70
 Fault visited states: [1 6]
-FAULT entry time s: 0.0001
+FAULT entry time s: 0.001
 Fault final state: 6
 Fault final PWM enable: 0
 Fault final duty: 0.5
 Stateflow fault verification pass: 1
+Fast overcurrent injection time s: 0.0903
+Fast fault entry time s: 0.0903
+Fast PWM disable time s: 0.0903
+Fast PWM disable latency s: 0
+Fast fault final state: 6
+Fast overcurrent verification pass: 1
 Fault latch from INIT visited states: [1 6]
 Fault latch from INIT final source active: 0
 Fault latch from INIT pass: 1
@@ -95,5 +108,10 @@ ERT initialize present: 1
 ERT inputs present: 1
 ERT outputs present: 1
 Generated Stateflow logic present: 1
+Generated fast-safety logic present: 1
+Generated slow-safety logic present: 1
+Generated dual-rate scheduler present: 1
+Generated sinf call count: 1
+Generated cosf call count: 1
 Generated S-Function text present: 0
 Code verification pass: 1

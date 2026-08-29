@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'PMSM_FOC_DualPlant_Controller_v21'.
  *
- * Model version                  : 1.33
+ * Model version                  : 1.42
  * Simulink Coder version         : 24.1 (R2024a) 19-Nov-2023
- * C/C++ source code generated on : Fri Aug 28 17:17:17 2026
+ * C/C++ source code generated on : Sat Aug 29 03:10:30 2026
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: Intel->x86-64 (Windows64)
@@ -25,19 +25,24 @@ P_PMSM_FOC_DualPlant_Controll_T PMSM_FOC_DualPlant_Controller_P = {
   /* Variable: NATIVE_RPM_TO_RAD_S
    * Referenced by:
    *   '<S4>/Electrical_Speed'
-   *   '<S14>/RpmToRad'
+   *   '<S16>/RpmToRad'
    */
   0.104719758F,
 
   /* Variable: NATIVE_SQRT3_BY2
    * Referenced by:
-   *   '<S7>/Vb_Beta'
-   *   '<S7>/Vc_Beta'
+   *   '<S9>/Vb_Beta'
+   *   '<S9>/Vc_Beta'
    */
   0.866025388F,
 
+  /* Expression: single(1.0)
+   * Referenced by: '<S1>/Align_Cos_One'
+   */
+  1.0F,
+
   /* Expression: single(0.0)
-   * Referenced by: '<S1>/Align_Theta_Zero'
+   * Referenced by: '<S1>/Align_Sin_Zero'
    */
   0.0F,
 
@@ -62,39 +67,14 @@ P_PMSM_FOC_DualPlant_Controll_T PMSM_FOC_DualPlant_Controller_P = {
   0.0F,
 
   /* Expression: single(0.0)
-   * Referenced by: '<S12>/Integrator_Zero'
+   * Referenced by: '<S13>/Integrator_Zero'
    */
   0.0F,
 
   /* Expression: single(0.0)
-   * Referenced by: '<S14>/Integrator_Zero'
+   * Referenced by: '<S16>/Integrator_Zero'
    */
   0.0F,
-
-  /* Expression: single(1.0)
-   * Referenced by: '<Root>/Start_Threshold_Rpm'
-   */
-  1.0F,
-
-  /* Expression: single(3000.0)
-   * Referenced by: '<S9>/Max_Speed_Rpm'
-   */
-  3000.0F,
-
-  /* Expression: single(12.0)
-   * Referenced by: '<S9>/Max_Current_A'
-   */
-  12.0F,
-
-  /* Expression: single(10.0)
-   * Referenced by: '<S9>/Min_Vdc'
-   */
-  10.0F,
-
-  /* Expression: single(60.0)
-   * Referenced by: '<S9>/Max_Vdc'
-   */
-  60.0F,
 
   /* Expression: single(0.0)
    * Referenced by: '<S3>/Count_State'
@@ -105,6 +85,31 @@ P_PMSM_FOC_DualPlant_Controll_T PMSM_FOC_DualPlant_Controller_P = {
    * Referenced by: '<S3>/Sample_Target'
    */
   100.0F,
+
+  /* Expression: single(1.0)
+   * Referenced by: '<Root>/Start_Threshold_Rpm'
+   */
+  1.0F,
+
+  /* Expression: single(12.0)
+   * Referenced by: '<S8>/Max_Current_A'
+   */
+  12.0F,
+
+  /* Expression: single(3000.0)
+   * Referenced by: '<S15>/Max_Speed_Rpm'
+   */
+  3000.0F,
+
+  /* Expression: single(10.0)
+   * Referenced by: '<S15>/Min_Vdc'
+   */
+  10.0F,
+
+  /* Expression: single(60.0)
+   * Referenced by: '<S15>/Max_Vdc'
+   */
+  60.0F,
 
   /* Expression: single(0.0)
    * Referenced by: '<Root>/Id_Reference_Zero'
@@ -137,7 +142,7 @@ P_PMSM_FOC_DualPlant_Controll_T PMSM_FOC_DualPlant_Controller_P = {
   0.0F,
 
   /* Expression: single(-1.0)
-   * Referenced by: '<S11>/Negative'
+   * Referenced by: '<S12>/Negative'
    */
   -1.0F,
 
@@ -147,27 +152,27 @@ P_PMSM_FOC_DualPlant_Controll_T PMSM_FOC_DualPlant_Controller_P = {
   0.0F,
 
   /* Expression: single(0.0)
-   * Referenced by: '<S12>/Integrator_State'
+   * Referenced by: '<S13>/Integrator_State'
    */
   0.0F,
 
   /* Expression: single(-0.5)
-   * Referenced by: '<S7>/Vb_Alpha'
+   * Referenced by: '<S9>/Vb_Alpha'
    */
   -0.5F,
 
   /* Expression: single(-0.5)
-   * Referenced by: '<S7>/Vc_Alpha'
+   * Referenced by: '<S9>/Vc_Alpha'
    */
   -0.5F,
 
   /* Expression: single(-0.5)
-   * Referenced by: '<S13>/Common_Mode'
+   * Referenced by: '<S14>/Common_Mode'
    */
   -0.5F,
 
   /* Expression: single(0.5)
-   * Referenced by: '<S13>/Duty_Half'
+   * Referenced by: '<S14>/Duty_Half'
    */
   0.5F,
 
@@ -177,9 +182,14 @@ P_PMSM_FOC_DualPlant_Controll_T PMSM_FOC_DualPlant_Controller_P = {
   0.5F,
 
   /* Expression: single(0.0)
-   * Referenced by: '<S14>/Integrator_State'
+   * Referenced by: '<S16>/Integrator_State'
    */
-  0.0F
+  0.0F,
+
+  /* Expression: false
+   * Referenced by: '<S8>/Fault_Latch_State'
+   */
+  false
 };
 
 /*

@@ -33,7 +33,7 @@ set_param(harnessName, 'ZoomFactor', '100');
 save_system(controllerName, controllerFile);
 save_system(harnessName, harnessFile);
 
-fprintf('CODEX_FOC_COMPONENTS=%d\n', 10);
+fprintf('CODEX_FOC_COMPONENTS=%d\n', 11);
 fprintf('CODEX_FOC_CONTROLLER_MODEL=%s\n', controllerName);
 fprintf('CODEX_FOC_HARNESS_MODEL=%s\n', harnessName);
 fprintf('CODEX_FOC_SPEED_TASK_S=0.001\n');
@@ -69,7 +69,12 @@ add_line(modelName, 'PhaseCurrentA/1', 'Clarke_Transform/1', 'autorouting', 'on'
 add_line(modelName, 'PhaseCurrentB/1', 'Clarke_Transform/2', 'autorouting', 'on');
 add_line(modelName, 'Clarke_Transform/1', 'Park_Transform/1', 'autorouting', 'on');
 add_line(modelName, 'Clarke_Transform/2', 'Park_Transform/2', 'autorouting', 'on');
-add_line(modelName, 'ElectricalAngleRad/1', 'Park_Transform/3', 'autorouting', 'on');
+add_line(modelName, 'ElectricalAngleRad/1', ...
+    'Electrical_Angle_Trig_100us/1', 'autorouting', 'on');
+add_line(modelName, 'Electrical_Angle_Trig_100us/1', ...
+    'Park_Transform/3', 'autorouting', 'on');
+add_line(modelName, 'Electrical_Angle_Trig_100us/2', ...
+    'Park_Transform/4', 'autorouting', 'on');
 add_line(modelName, 'Id_Reference_Zero/1', 'D_Axis_Current_PI/1', 'autorouting', 'on');
 add_line(modelName, 'Park_Transform/1', 'D_Axis_Current_PI/2', 'autorouting', 'on');
 add_line(modelName, 'Park_Transform/2', 'Q_Axis_Current_PI/2', 'autorouting', 'on');
@@ -86,7 +91,10 @@ add_line(modelName, 'DQ_Voltage_Command/1', 'VdCommand/1', 'autorouting', 'on');
 add_line(modelName, 'DQ_Voltage_Command/2', 'VqCommand/1', 'autorouting', 'on');
 add_line(modelName, 'DQ_Voltage_Command/1', 'Inverse_Park_Transform/1', 'autorouting', 'on');
 add_line(modelName, 'DQ_Voltage_Command/2', 'Inverse_Park_Transform/2', 'autorouting', 'on');
-add_line(modelName, 'ElectricalAngleRad/1', 'Inverse_Park_Transform/3', 'autorouting', 'on');
+add_line(modelName, 'Electrical_Angle_Trig_100us/1', ...
+    'Inverse_Park_Transform/3', 'autorouting', 'on');
+add_line(modelName, 'Electrical_Angle_Trig_100us/2', ...
+    'Inverse_Park_Transform/4', 'autorouting', 'on');
 add_line(modelName, 'Inverse_Park_Transform/1', 'Inverse_Clarke_Transform/1', 'autorouting', 'on');
 add_line(modelName, 'Inverse_Park_Transform/2', 'Inverse_Clarke_Transform/2', 'autorouting', 'on');
 add_line(modelName, 'Inverse_Clarke_Transform/1', 'SVPWM_Duty_Calculation/1', 'autorouting', 'on');
@@ -128,7 +136,12 @@ add_line(modelName, 'Selectable_PMSM_Plant/3', 'Clarke_Transform/1', 'autoroutin
 add_line(modelName, 'Selectable_PMSM_Plant/4', 'Clarke_Transform/2', 'autorouting', 'on');
 add_line(modelName, 'Clarke_Transform/1', 'Park_Transform/1', 'autorouting', 'on');
 add_line(modelName, 'Clarke_Transform/2', 'Park_Transform/2', 'autorouting', 'on');
-add_line(modelName, 'Selectable_PMSM_Plant/2', 'Park_Transform/3', 'autorouting', 'on');
+add_line(modelName, 'Selectable_PMSM_Plant/2', ...
+    'Electrical_Angle_Trig_100us/1', 'autorouting', 'on');
+add_line(modelName, 'Electrical_Angle_Trig_100us/1', ...
+    'Park_Transform/3', 'autorouting', 'on');
+add_line(modelName, 'Electrical_Angle_Trig_100us/2', ...
+    'Park_Transform/4', 'autorouting', 'on');
 add_line(modelName, 'Id_Reference_Zero/1', 'D_Axis_Current_PI/1', 'autorouting', 'on');
 add_line(modelName, 'Park_Transform/1', 'D_Axis_Current_PI/2', 'autorouting', 'on');
 add_line(modelName, 'Park_Transform/2', 'Q_Axis_Current_PI/2', 'autorouting', 'on');
@@ -141,7 +154,10 @@ add_line(modelName, 'DQ_Decoupling_Feedforward/1', 'DQ_Voltage_Command/3', 'auto
 add_line(modelName, 'DQ_Decoupling_Feedforward/2', 'DQ_Voltage_Command/4', 'autorouting', 'on');
 add_line(modelName, 'DQ_Voltage_Command/1', 'Inverse_Park_Transform/1', 'autorouting', 'on');
 add_line(modelName, 'DQ_Voltage_Command/2', 'Inverse_Park_Transform/2', 'autorouting', 'on');
-add_line(modelName, 'Selectable_PMSM_Plant/2', 'Inverse_Park_Transform/3', 'autorouting', 'on');
+add_line(modelName, 'Electrical_Angle_Trig_100us/1', ...
+    'Inverse_Park_Transform/3', 'autorouting', 'on');
+add_line(modelName, 'Electrical_Angle_Trig_100us/2', ...
+    'Inverse_Park_Transform/4', 'autorouting', 'on');
 add_line(modelName, 'Inverse_Park_Transform/1', 'Inverse_Clarke_Transform/1', 'autorouting', 'on');
 add_line(modelName, 'Inverse_Park_Transform/2', 'Inverse_Clarke_Transform/2', 'autorouting', 'on');
 add_line(modelName, 'Inverse_Clarke_Transform/1', 'SVPWM_Duty_Calculation/1', 'autorouting', 'on');
@@ -170,6 +186,7 @@ if isHarness
     speedPosition = [140 45 310 125];
     transitionPosition = [350 65 470 105];
     clarkePosition = [350 360 510 455];
+    trigPosition = [350 500 510 575];
     parkPosition = [565 345 725 460];
     dPiPosition = [690 205 850 290];
     qPiPosition = [690 45 850 130];
@@ -182,6 +199,7 @@ else
     speedPosition = [110 45 280 125];
     transitionPosition = [320 65 440 105];
     clarkePosition = [330 360 490 455];
+    trigPosition = [330 500 490 575];
     parkPosition = [545 345 705 460];
     dPiPosition = [670 205 830 290];
     qPiPosition = [670 45 830 130];
@@ -202,8 +220,12 @@ add_block('simulink/Signal Attributes/Rate Transition', ...
 addTopComponent(parent, 'Clarke_Transform', clarkePosition, 'lightBlue', ...
     '3s TO 2s CURRENT', 'Task=100 us | Ia/Ib -> Ialpha/Ibeta');
 buildClarke([parent '/Clarke_Transform']);
+addTopComponent(parent, 'Electrical_Angle_Trig_100us', trigPosition, ...
+    'lightBlue', 'SHARED ELECTRICAL ANGLE', ...
+    'Task=100 us | theta -> one shared sin/cos pair');
+buildElectricalAngleTrig([parent '/Electrical_Angle_Trig_100us']);
 addTopComponent(parent, 'Park_Transform', parkPosition, 'lightBlue', ...
-    'STATIONARY TO ROTATING CURRENT', 'Task=100 us | Ialpha/Ibeta + theta -> Id/Iq');
+    'STATIONARY TO ROTATING CURRENT', 'Task=100 us | Ialpha/Ibeta + sin/cos -> Id/Iq');
 buildPark([parent '/Park_Transform']);
 add_block('simulink/Sources/Constant', [parent '/Id_Reference_Zero'], ...
     'Value', 'single(0.0)', 'OutDataTypeStr', 'single', ...
@@ -222,7 +244,7 @@ addTopComponent(parent, 'DQ_Voltage_Command', voltagePosition, 'white', ...
     'D/Q VOLTAGE COMMAND', 'Task=100 us | PI + feedforward + voltage limit');
 buildVoltageCommand([parent '/DQ_Voltage_Command']);
 addTopComponent(parent, 'Inverse_Park_Transform', inverseParkPosition, 'lightBlue', ...
-    '2r TO 2s', 'Task=100 us | Vd/Vq -> Valpha/Vbeta');
+    '2r TO 2s', 'Task=100 us | Vd/Vq + shared sin/cos -> Valpha/Vbeta');
 buildInversePark([parent '/Inverse_Park_Transform']);
 addTopComponent(parent, 'Inverse_Clarke_Transform', inverseClarkePosition, 'lightBlue', ...
     '2s TO 3s', 'Task=100 us | Valpha/Vbeta -> Va/Vb/Vc');
@@ -242,7 +264,8 @@ for index = 1:numel(lineHandles)
 end
 blockNames = {'Native_FOC_Controller_100us', 'Speed_PI_Controller_1ms', ...
     'IqRef_Rate_Transition', 'Current_Control_100us', 'Id_Reference_Zero', ...
-    'Clarke_Transform', 'Park_Transform', 'D_Axis_Current_PI', ...
+    'Clarke_Transform', 'Electrical_Angle_Trig_100us', ...
+    'Park_Transform', 'D_Axis_Current_PI', ...
     'Q_Axis_Current_PI', 'DQ_Decoupling_Feedforward', ...
     'DQ_Voltage_Command', 'Inverse_Park_Transform', ...
     'Inverse_Clarke_Transform', 'SVPWM_Duty_Calculation'};
@@ -302,15 +325,33 @@ addNote(parent, ['RESPONSIBILITY: two-current Clarke transform\n' ...
     'Parameter: NATIVE_INV_SQRT3'], [70 20 410 95], 11, 'blue', 'lightBlue');
 end
 
+function buildElectricalAngleTrig(parent)
+Simulink.SubSystem.deleteContents(parent);
+addIn(parent, 'ThetaElectrical', 1, [20 145 50 159]);
+addOut(parent, 'SinTheta', 1, [350 115 380 129]);
+addOut(parent, 'CosTheta', 2, [350 215 380 229]);
+addTrig(parent, 'Sin_Electrical_Angle', 'sin', [130 100 200 140]);
+addTrig(parent, 'Cos_Electrical_Angle', 'cos', [130 200 200 240]);
+add_line(parent, 'ThetaElectrical/1', 'Sin_Electrical_Angle/1', ...
+    'autorouting', 'on');
+add_line(parent, 'ThetaElectrical/1', 'Cos_Electrical_Angle/1', ...
+    'autorouting', 'on');
+add_line(parent, 'Sin_Electrical_Angle/1', 'SinTheta/1', 'autorouting', 'on');
+add_line(parent, 'Cos_Electrical_Angle/1', 'CosTheta/1', 'autorouting', 'on');
+addNote(parent, ['RESPONSIBILITY: compute the electrical-angle basis once\n' ...
+    'One sin(theta) and one cos(theta) evaluation per 100 us step\n' ...
+    'The same pair feeds Park and inverse Park'], ...
+    [60 15 390 85], 11, 'blue', 'lightBlue');
+end
+
 function buildPark(parent)
 Simulink.SubSystem.deleteContents(parent);
 addIn(parent, 'Ialpha', 1, [20 120 50 134]);
 addIn(parent, 'Ibeta', 2, [20 200 50 214]);
-addIn(parent, 'ThetaElectrical', 3, [20 300 50 314]);
+addIn(parent, 'SinTheta', 3, [20 280 50 294]);
+addIn(parent, 'CosTheta', 4, [20 340 50 354]);
 addOut(parent, 'Id', 1, [520 150 550 164]);
 addOut(parent, 'Iq', 2, [520 250 550 264]);
-addTrig(parent, 'SinTheta', 'sin', [100 270 150 300]);
-addTrig(parent, 'CosTheta', 'cos', [100 320 150 350]);
 addProduct(parent, 'Id_CosAlpha', '**', [210 120 250 155]);
 addProduct(parent, 'Id_SinBeta', '**', [210 175 250 210]);
 addSum(parent, 'Id_Sum', '++', [320 135 350 200]);
@@ -318,8 +359,6 @@ addProduct(parent, 'Iq_SinAlpha', '**', [210 230 250 265]);
 addGain(parent, 'Negative', 'single(-1.0)', [290 230 350 260]);
 addProduct(parent, 'Iq_CosBeta', '**', [210 285 250 320]);
 addSum(parent, 'Iq_Sum', '++', [400 245 430 310]);
-add_line(parent, 'ThetaElectrical/1', 'SinTheta/1', 'autorouting', 'on');
-add_line(parent, 'ThetaElectrical/1', 'CosTheta/1', 'autorouting', 'on');
 add_line(parent, 'CosTheta/1', 'Id_CosAlpha/1', 'autorouting', 'on');
 add_line(parent, 'Ialpha/1', 'Id_CosAlpha/2', 'autorouting', 'on');
 add_line(parent, 'SinTheta/1', 'Id_SinBeta/1', 'autorouting', 'on');
@@ -511,19 +550,16 @@ function buildInversePark(parent)
 Simulink.SubSystem.deleteContents(parent);
 addIn(parent, 'Vd', 1, [20 120 50 134]);
 addIn(parent, 'Vq', 2, [20 200 50 214]);
-addIn(parent, 'ThetaElectrical', 3, [20 300 50 314]);
+addIn(parent, 'SinTheta', 3, [20 280 50 294]);
+addIn(parent, 'CosTheta', 4, [20 340 50 354]);
 addOut(parent, 'Valpha', 1, [520 150 550 164]);
 addOut(parent, 'Vbeta', 2, [520 260 550 274]);
-addTrig(parent, 'SinTheta', 'sin', [100 270 150 300]);
-addTrig(parent, 'CosTheta', 'cos', [100 320 150 350]);
 addProduct(parent, 'Valpha_CosVd', '**', [220 120 260 155]);
 addProduct(parent, 'Valpha_SinVq', '**', [220 180 260 215]);
 addSum(parent, 'Valpha_Sum', '+-', [340 135 370 205]);
 addProduct(parent, 'Vbeta_SinVd', '**', [220 240 260 275]);
 addProduct(parent, 'Vbeta_CosVq', '**', [220 300 260 335]);
 addSum(parent, 'Vbeta_Sum', '++', [340 255 370 325]);
-add_line(parent, 'ThetaElectrical/1', 'SinTheta/1', 'autorouting', 'on');
-add_line(parent, 'ThetaElectrical/1', 'CosTheta/1', 'autorouting', 'on');
 add_line(parent, 'CosTheta/1', 'Valpha_CosVd/1', 'autorouting', 'on');
 add_line(parent, 'Vd/1', 'Valpha_CosVd/2', 'autorouting', 'on');
 add_line(parent, 'SinTheta/1', 'Valpha_SinVq/1', 'autorouting', 'on');
