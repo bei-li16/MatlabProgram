@@ -1,0 +1,32 @@
+PMSM FOC Dual Plant v2.1.0 baseline reproducibility
+Required clean build count: 2
+Run 1 started at: 2026-08-31T04:13:17+08:00
+Run 1 completed at: 2026-08-31T04:20:41+08:00
+Run 1 duration s: 444.868618
+Run 1 clean build: 1
+Run 1 batch mode: 1
+Run 1 Git commit: ae62bac49051591a13a38ac546a6ef5f7779cf93
+Run 1 controller checksum: F3830E96A301CAE4DD5FADBB6B09AFD8
+Run 1 harness checksum: 5D7F7808CAEFDB7F3253245556780ACB
+Run 1 interface signature: 2BI-1BO-13C-6S
+Run 1 verification pass: 1
+Run 2 started at: 2026-08-31T04:20:47+08:00
+Run 2 completed at: 2026-08-31T04:21:34+08:00
+Run 2 duration s: 46.7441007
+Run 2 clean build: 1
+Run 2 batch mode: 1
+Run 2 Git commit: ae62bac49051591a13a38ac546a6ef5f7779cf93
+Run 2 controller checksum: F3830E96A301CAE4DD5FADBB6B09AFD8
+Run 2 harness checksum: 5D7F7808CAEFDB7F3253245556780ACB
+Run 2 interface signature: 2BI-1BO-13C-6S
+Run 2 verification pass: 1
+Controller checksum match: 1
+Harness checksum match: 1
+Generated interface match: 1
+Controller configuration match: 1
+Harness configuration match: 1
+Metric comparison tolerance: 1e-06
+Native maximum metric delta: 0
+MathWorks maximum metric delta: 0
+Both complete verification runs pass: 1
+Baseline reproducibility pass: 1

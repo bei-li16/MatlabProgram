@@ -1,4 +1,44 @@
 PMSM FOC Dual Plant v2.1.0 verification
+Build started at: 2026-08-31T04:20:47+08:00
+Build completed at: 2026-08-31T04:21:34+08:00
+Build duration s: 46.7441007
+Clean build performed: 1
+Batch mode: 1
+Architecture images exported: 0
+MATLAB version: 24.1.0.2537033 (R2024a)
+MATLAB release: 2024a
+Host architecture: win64
+Operating system: Microsoft Windows 11 专业版
+Git commit at build: ae62bac49051591a13a38ac546a6ef5f7779cf93
+Git working tree clean at build start: 0
+Git status entry count at build start: 39
+Required product MATLAB: installed=1, version=24.1, license=1
+Required product Simulink: installed=1, version=24.1, license=1
+Required product Stateflow: installed=1, version=24.1, license=1
+Required product Simulink Coder: installed=1, version=24.1, license=1
+Required product Embedded Coder: installed=1, version=24.1, license=1
+Required product Motor Control Blockset: installed=1, version=24.1, license=1
+Controller semantic checksum: F3830E96A301CAE4DD5FADBB6B09AFD8
+Harness semantic checksum: 5D7F7808CAEFDB7F3253245556780ACB
+Generated interface signature: 2BI-1BO-13C-6S
+Controller configuration SolverType: Fixed-step
+Controller configuration Solver: FixedStepDiscrete
+Controller configuration FixedStep: 0.0001
+Controller configuration SystemTargetFile: ert.tlc
+Controller configuration ProdHWDeviceType: Intel->x86-64 (Windows64)
+Controller configuration CodeInterfacePackaging: Nonreusable function
+Controller configuration MultiTasking: <unavailable>
+Controller configuration GenerateReport: off
+Controller configuration Toolchain: Automatically locate an installed toolchain
+Harness configuration SolverType: Fixed-step
+Harness configuration Solver: FixedStepDiscrete
+Harness configuration FixedStep: 0.0001
+Harness configuration SystemTargetFile: grt.tlc
+Harness configuration ProdHWDeviceType: Intel->x86-64 (Windows64)
+Harness configuration CodeInterfacePackaging: Nonreusable function
+Harness configuration MultiTasking: <unavailable>
+Harness configuration GenerateReport: off
+Harness configuration Toolchain: Automatically locate an installed toolchain
 Controller model: PMSM_FOC_DualPlant_Controller_v21
 Closed-loop model: PMSM_FOC_DualPlant_ClosedLoop_v21
 Default selection: 2 (MathWorks MCB PMSM HDL)
@@ -9,8 +49,8 @@ MathWorks reference verified: 1
 Callback button present: 1
 One-click switch control present: 1
 FOC component count: 13
-Controller input count: 7
-Controller output count: 8
+Controller input count: 2
+Controller output count: 1
 Controller components present: 1
 Harness components present: 1
 Controller explicit task boundaries present: 1
@@ -24,7 +64,18 @@ Harness 1 ms slow safety monitor present: 1
 Stateflow chart present: 1
 Stateflow state count: 6
 Stateflow SUPERVISED domain present: 1
-Explicit FaultResetAck port present: 1
+Legacy scalar FaultResetAck port absent: 1
+Typed Bus interface present: 1
+Data dictionary present: 1
+Data dictionary parameter count: 31
+Data dictionary interface element count: 39
+Data dictionary parameter-set version: 2.1.0
+ControlCommandBus elements verified: 1
+MeasurementBus elements verified: 1
+ControlStatusBus elements verified: 1
+CalibrationBus elements verified: 1
+FaultResetRequest Bus element present: 1
+Migrated parameter model-workspace shadows: 0
 Acknowledged FAULT reset transition present: 1
 CALIB done transition present: 1
 RUN stop to INIT transition present: 1
@@ -111,7 +162,11 @@ Generated Stateflow logic present: 1
 Generated fast-safety logic present: 1
 Generated slow-safety logic present: 1
 Generated dual-rate scheduler present: 1
+Generated ControlCommandBus type present: 1
+Generated MeasurementBus type present: 1
+Generated ControlStatusBus type present: 1
 Generated sinf call count: 1
 Generated cosf call count: 1
 Generated S-Function text present: 0
 Code verification pass: 1
+Overall verification pass: 1

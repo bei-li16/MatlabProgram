@@ -2,6 +2,15 @@
 *.asv
 *.autosave
 *.original
+*.m~
+*.mlx~
+*.slx~
+*.mdl~
+
+## MATLAB crash and JVM diagnostics
+matlab_crash_dump.*
+java.log.*
+hs_err_pid*
 
 ## Simulink caches, coverage output, and generated work directories
 **/slprj/
@@ -28,3 +37,21 @@
 *.exe
 *.mexw*
 *.pdb
+
+## LaTeX build intermediates (keep .tex, figures, and final .pdf)
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.nav
+*.out
+*.run.xml
+*.snm
+*.synctex.gz
+*.toc
+*.vrb
+*.xdv

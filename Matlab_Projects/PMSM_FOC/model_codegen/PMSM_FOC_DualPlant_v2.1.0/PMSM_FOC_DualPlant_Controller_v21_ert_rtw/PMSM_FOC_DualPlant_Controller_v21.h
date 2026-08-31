@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'PMSM_FOC_DualPlant_Controller_v21'.
  *
- * Model version                  : 1.42
+ * Model version                  : 1.6
  * Simulink Coder version         : 24.1 (R2024a) 19-Nov-2023
- * C/C++ source code generated on : Sat Aug 29 03:10:30 2026
+ * C/C++ source code generated on : Mon Aug 31 04:08:31 2026
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: Intel->x86-64 (Windows64)
@@ -21,6 +21,9 @@
 #endif                  /* PMSM_FOC_DualPlant_Controller_v21_COMMON_INCLUDES_ */
 
 #include "PMSM_FOC_DualPlant_Controller_v21_types.h"
+#include "ControlCommandBus.h"
+#include "MeasurementBus.h"
+#include "ControlStatusBus.h"
 
 /* Macros for accessing real-time model data structure */
 #ifndef rtmGetErrorStatus
@@ -33,6 +36,8 @@
 
 /* Block signals (default storage) */
 typedef struct {
+  real32_T IqReference;                /* '<Root>/IqRef_Rate_Transition' */
+  boolean_T StatusFault_To_100us;      /* '<Root>/StatusFault_To_100us' */
   boolean_T ControlEnable;             /* '<Root>/Motor_Supervisor_1ms' */
   boolean_T PwmEnable;                 /* '<Root>/Motor_Supervisor_1ms' */
   boolean_T CalibrationEnable;         /* '<Root>/Motor_Supervisor_1ms' */
@@ -47,41 +52,39 @@ typedef struct {
   real32_T SumA_State_DSTATE;          /* '<S3>/SumA_State' */
   real32_T SumB_State_DSTATE;          /* '<S3>/SumB_State' */
   real32_T Integrator_State_DSTATE;    /* '<S6>/Integrator_State' */
-  real32_T Integrator_State_DSTATE_o;  /* '<S13>/Integrator_State' */
-  real32_T Integrator_State_DSTATE_p;  /* '<S16>/Integrator_State' */
+  real32_T Integrator_State_DSTATE_c;  /* '<S13>/Integrator_State' */
+  real32_T Integrator_State_DSTATE_k;  /* '<S16>/Integrator_State' */
   real32_T IqRef_Rate_Transition_Buffer0;/* '<Root>/IqRef_Rate_Transition' */
+  uint16_T temporalCounter_i1;         /* '<Root>/Motor_Supervisor_1ms' */
   boolean_T Fault_Latch_State_DSTATE;  /* '<S8>/Fault_Latch_State' */
+  uint8_T StatusState_To_100us_Buffer0;/* '<Root>/StatusState_To_100us' */
   uint8_T is_active_c3_PMSM_FOC_DualPlant;/* '<Root>/Motor_Supervisor_1ms' */
   uint8_T is_c3_PMSM_FOC_DualPlant_Contro;/* '<Root>/Motor_Supervisor_1ms' */
   uint8_T is_SUPERVISED;               /* '<Root>/Motor_Supervisor_1ms' */
-  uint8_T temporalCounter_i1;          /* '<Root>/Motor_Supervisor_1ms' */
+  boolean_T StatusFault_To_100us_Buffer0;/* '<Root>/StatusFault_To_100us' */
 } DW_PMSM_FOC_DualPlant_Control_T;
 
 /* External inputs (root inport signals with default storage) */
 typedef struct {
-  real32_T SpeedReferenceRpm;          /* '<Root>/SpeedReferenceRpm' */
-  real32_T SpeedRpm;                   /* '<Root>/SpeedRpm' */
-  real32_T PhaseCurrentA;              /* '<Root>/PhaseCurrentA' */
-  real32_T PhaseCurrentB;              /* '<Root>/PhaseCurrentB' */
-  real32_T ElectricalAngleRad;         /* '<Root>/ElectricalAngleRad' */
-  real32_T DcBusVoltage;               /* '<Root>/DcBusVoltage' */
-  boolean_T FaultResetAck;             /* '<Root>/FaultResetAck' */
+  ControlCommandBus ControlCommand;    /* '<Root>/ControlCommand' */
+  MeasurementBus Measurement;          /* '<Root>/Measurement' */
 } ExtU_PMSM_FOC_DualPlant_Contr_T;
 
 /* External outputs (root outports fed by signals with default storage) */
 typedef struct {
-  real32_T DutyA;                      /* '<Root>/DutyA' */
-  real32_T DutyB;                      /* '<Root>/DutyB' */
-  real32_T DutyC;                      /* '<Root>/DutyC' */
-  real32_T IqReference;                /* '<Root>/IqReference' */
-  real32_T IdMeasured;                 /* '<Root>/IdMeasured' */
-  real32_T IqMeasured;                 /* '<Root>/IqMeasured' */
-  real32_T VdCommand;                  /* '<Root>/VdCommand' */
-  real32_T VqCommand;                  /* '<Root>/VqCommand' */
+  ControlStatusBus ControlStatus;      /* '<Root>/ControlStatus' */
 } ExtY_PMSM_FOC_DualPlant_Contr_T;
 
 /* Parameters (default storage) */
 struct P_PMSM_FOC_DualPlant_Controll_T_ {
+  real32_T FOC_Native_CurrentPeriod;   /* Variable: FOC_Native_CurrentPeriod
+                                        * Referenced by:
+                                        *   '<S6>/KiTs'
+                                        *   '<S13>/KiTs'
+                                        */
+  real32_T FOC_Native_SpeedPeriod;     /* Variable: FOC_Native_SpeedPeriod
+                                        * Referenced by: '<S16>/KiTs'
+                                        */
   real32_T NATIVE_INV_SQRT3;           /* Variable: NATIVE_INV_SQRT3
                                         * Referenced by: '<S2>/InvSqrt3'
                                         */
@@ -95,17 +98,14 @@ struct P_PMSM_FOC_DualPlant_Controll_T_ {
                                         *   '<S9>/Vb_Beta'
                                         *   '<S9>/Vc_Beta'
                                         */
-  real32_T Align_Cos_One_Value;        /* Expression: single(1.0)
-                                        * Referenced by: '<S1>/Align_Cos_One'
+  real32_T PMSM_Alignment_Cos;         /* Variable: PMSM_Alignment_Cos
+                                        * Referenced by: '<S1>/Align_Cos'
                                         */
-  real32_T Align_Sin_Zero_Value;       /* Expression: single(0.0)
-                                        * Referenced by: '<S1>/Align_Sin_Zero'
+  real32_T PMSM_Alignment_Sin;         /* Variable: PMSM_Alignment_Sin
+                                        * Referenced by: '<S1>/Align_Sin'
                                         */
-  real32_T Align_Vd_2V_Value;          /* Expression: single(2.0)
-                                        * Referenced by: '<S1>/Align_Vd_2V'
-                                        */
-  real32_T Align_Vq_Zero_Value;        /* Expression: single(0.0)
-                                        * Referenced by: '<S1>/Align_Vq_Zero'
+  real32_T PMSM_SafeDuty;              /* Variable: PMSM_SafeDuty
+                                        * Referenced by: '<Root>/Safe_Duty_50pct'
                                         */
   real32_T One_Value;                  /* Expression: single(1.0)
                                         * Referenced by: '<S3>/One'
@@ -113,33 +113,15 @@ struct P_PMSM_FOC_DualPlant_Controll_T_ {
   real32_T Integrator_Zero_Value;      /* Expression: single(0.0)
                                         * Referenced by: '<S6>/Integrator_Zero'
                                         */
-  real32_T Integrator_Zero_Value_c;    /* Expression: single(0.0)
+  real32_T Integrator_Zero_Value_j;    /* Expression: single(0.0)
                                         * Referenced by: '<S13>/Integrator_Zero'
                                         */
-  real32_T Integrator_Zero_Value_g;    /* Expression: single(0.0)
+  real32_T Integrator_Zero_Value_c;    /* Expression: single(0.0)
                                         * Referenced by: '<S16>/Integrator_Zero'
                                         */
   real32_T Count_State_InitialCondition;/* Expression: single(0.0)
                                          * Referenced by: '<S3>/Count_State'
                                          */
-  real32_T Sample_Target_Value;        /* Expression: single(100.0)
-                                        * Referenced by: '<S3>/Sample_Target'
-                                        */
-  real32_T Start_Threshold_Rpm_Value;  /* Expression: single(1.0)
-                                        * Referenced by: '<Root>/Start_Threshold_Rpm'
-                                        */
-  real32_T Max_Current_A_Value;        /* Expression: single(12.0)
-                                        * Referenced by: '<S8>/Max_Current_A'
-                                        */
-  real32_T Max_Speed_Rpm_Value;        /* Expression: single(3000.0)
-                                        * Referenced by: '<S15>/Max_Speed_Rpm'
-                                        */
-  real32_T Min_Vdc_Value;              /* Expression: single(10.0)
-                                        * Referenced by: '<S15>/Min_Vdc'
-                                        */
-  real32_T Max_Vdc_Value;              /* Expression: single(60.0)
-                                        * Referenced by: '<S15>/Max_Vdc'
-                                        */
   real32_T Id_Reference_Zero_Value;    /* Expression: single(0.0)
                                         * Referenced by: '<Root>/Id_Reference_Zero'
                                         */
@@ -165,7 +147,7 @@ struct P_PMSM_FOC_DualPlant_Controll_T_ {
                           /* Computed Parameter: IqRef_Rate_Transition_InitialCo
                            * Referenced by: '<Root>/IqRef_Rate_Transition'
                            */
-  real32_T Integrator_State_InitialCondi_n;/* Expression: single(0.0)
+  real32_T Integrator_State_InitialCondi_e;/* Expression: single(0.0)
                                             * Referenced by: '<S13>/Integrator_State'
                                             */
   real32_T Vb_Alpha_Gain;              /* Expression: single(-0.5)
@@ -180,15 +162,23 @@ struct P_PMSM_FOC_DualPlant_Controll_T_ {
   real32_T Duty_Half_Value;            /* Expression: single(0.5)
                                         * Referenced by: '<S14>/Duty_Half'
                                         */
-  real32_T Safe_Duty_50pct_Value;      /* Expression: single(0.5)
-                                        * Referenced by: '<Root>/Safe_Duty_50pct'
-                                        */
-  real32_T Integrator_State_InitialCondi_d;/* Expression: single(0.0)
+  real32_T Integrator_State_InitialCondi_a;/* Expression: single(0.0)
                                             * Referenced by: '<S16>/Integrator_State'
                                             */
   boolean_T Fault_Latch_State_InitialCondit;/* Expression: false
                                              * Referenced by: '<S8>/Fault_Latch_State'
                                              */
+  boolean_T StatusFault_To_100us_InitialCon;
+                          /* Computed Parameter: StatusFault_To_100us_InitialCon
+                           * Referenced by: '<Root>/StatusFault_To_100us'
+                           */
+  boolean_T VoltageLimit_Inactive_Value;/* Expression: false
+                                         * Referenced by: '<Root>/VoltageLimit_Inactive'
+                                         */
+  uint8_T StatusState_To_100us_InitialCon;
+                          /* Computed Parameter: StatusState_To_100us_InitialCon
+                           * Referenced by: '<Root>/StatusState_To_100us'
+                           */
 };
 
 /* Real-time Model Data Structure */
@@ -235,65 +225,111 @@ extern real32_T FOC_Native_CurrentIntegratorLimit;
                                    * Referenced by:
                                    *   '<S6>/Integrator_Limit'
                                    *   '<S13>/Integrator_Limit'
+                                   * D/q PI integrator absolute limit Owner=Control; Version=2.1.0; Class=TunableCalibration.
                                    */
-extern real32_T FOC_Native_CurrentPeriod;/* Variable: FOC_Native_CurrentPeriod
-                                          * Referenced by:
-                                          *   '<S6>/KiTs'
-                                          *   '<S13>/KiTs'
-                                          */
 extern real32_T FOC_Native_DutyMax;    /* Variable: FOC_Native_DutyMax
                                         * Referenced by:
                                         *   '<S14>/Duty_A_Limit'
                                         *   '<S14>/Duty_B_Limit'
                                         *   '<S14>/Duty_C_Limit'
+                                        * Maximum SVPWM duty Owner=Modulation; Version=2.1.0; Class=TunableCalibration.
                                         */
 extern real32_T FOC_Native_DutyMin;    /* Variable: FOC_Native_DutyMin
                                         * Referenced by:
                                         *   '<S14>/Duty_A_Limit'
                                         *   '<S14>/Duty_B_Limit'
                                         *   '<S14>/Duty_C_Limit'
+                                        * Minimum SVPWM duty Owner=Modulation; Version=2.1.0; Class=TunableCalibration.
                                         */
 extern real32_T FOC_Native_FluxPM;     /* Variable: FOC_Native_FluxPM
                                         * Referenced by: '<S4>/Flux_PM'
+                                        * Permanent-magnet flux linkage Owner=MotorCalibration; Version=2.1.0; Class=TunableCalibration.
                                         */
 extern real32_T FOC_Native_IqLimit;    /* Variable: FOC_Native_IqLimit
                                         * Referenced by:
                                         *   '<S16>/Integrator_Limit'
                                         *   '<S16>/Iq_Reference_Limit'
+                                        * Speed-loop q-axis current command limit Owner=Control; Version=2.1.0; Class=TunableCalibration.
                                         */
 extern real32_T FOC_Native_KiCurrent;  /* Variable: FOC_Native_KiCurrent
                                         * Referenced by:
                                         *   '<S6>/KiTs'
                                         *   '<S13>/KiTs'
+                                        * Current PI integral gain Owner=Control; Version=2.1.0; Class=TunableCalibration.
                                         */
 extern real32_T FOC_Native_KiSpeed;    /* Variable: FOC_Native_KiSpeed
                                         * Referenced by: '<S16>/KiTs'
+                                        * Speed PI integral gain Owner=Control; Version=2.1.0; Class=TunableCalibration.
                                         */
 extern real32_T FOC_Native_KpCurrent;  /* Variable: FOC_Native_KpCurrent
                                         * Referenced by:
                                         *   '<S6>/Kp'
                                         *   '<S13>/Kp'
+                                        * Current PI proportional gain Owner=Control; Version=2.1.0; Class=TunableCalibration.
                                         */
 extern real32_T FOC_Native_KpSpeed;    /* Variable: FOC_Native_KpSpeed
                                         * Referenced by: '<S16>/Kp'
+                                        * Speed PI proportional gain Owner=Control; Version=2.1.0; Class=TunableCalibration.
                                         */
 extern real32_T FOC_Native_Ld;         /* Variable: FOC_Native_Ld
                                         * Referenced by: '<S4>/Ld_x_Id'
+                                        * D-axis inductance Owner=MotorCalibration; Version=2.1.0; Class=TunableCalibration.
                                         */
 extern real32_T FOC_Native_Lq;         /* Variable: FOC_Native_Lq
                                         * Referenced by: '<S4>/D_Decoupling'
+                                        * Q-axis inductance Owner=MotorCalibration; Version=2.1.0; Class=TunableCalibration.
                                         */
 extern real32_T FOC_Native_PolePairs;  /* Variable: FOC_Native_PolePairs
                                         * Referenced by: '<S4>/Electrical_Speed'
-                                        */
-extern real32_T FOC_Native_SpeedPeriod;/* Variable: FOC_Native_SpeedPeriod
-                                        * Referenced by: '<S16>/KiTs'
+                                        * Integer-valued motor pole-pair count stored as single for plant equation compatibility Owner=MotorCalibration; Version=2.1.0; Class=TunableCalibration.
                                         */
 extern real32_T FOC_Native_VoltageLimit;/* Variable: FOC_Native_VoltageLimit
                                          * Referenced by:
                                          *   '<S5>/Vd_Limit'
                                          *   '<S5>/Vq_Limit'
+                                         * Independent d/q voltage command limit Owner=Control; Version=2.1.0; Class=TunableCalibration.
                                          */
+extern real32_T PMSM_Alignment_Vd_V;   /* Variable: PMSM_Alignment_Vd_V
+                                        * Referenced by: '<S1>/Align_Vd'
+                                        * Alignment d-axis voltage Owner=Control; Version=2.1.0; Class=TunableCalibration.
+                                        */
+extern real32_T PMSM_Alignment_Vq_V;   /* Variable: PMSM_Alignment_Vq_V
+                                        * Referenced by: '<S1>/Align_Vq'
+                                        * Alignment q-axis voltage Owner=Control; Version=2.1.0; Class=TunableCalibration.
+                                        */
+extern real32_T PMSM_Protection_MaxCurrent_A;/* Variable: PMSM_Protection_MaxCurrent_A
+                                              * Referenced by: '<S8>/Max_Current_A'
+                                              * Fast overcurrent trip threshold Owner=Safety; Version=2.1.0; Class=TunableCalibration.
+                                              */
+extern real32_T PMSM_Protection_MaxDcBus_V;/* Variable: PMSM_Protection_MaxDcBus_V
+                                            * Referenced by: '<S15>/Max_Vdc'
+                                            * DC-bus overvoltage threshold Owner=Safety; Version=2.1.0; Class=TunableCalibration.
+                                            */
+extern real32_T PMSM_Protection_MaxSpeed_Rpm;/* Variable: PMSM_Protection_MaxSpeed_Rpm
+                                              * Referenced by: '<S15>/Max_Speed_Rpm'
+                                              * Slow overspeed trip threshold Owner=Safety; Version=2.1.0; Class=TunableCalibration.
+                                              */
+extern real32_T PMSM_Protection_MinDcBus_V;/* Variable: PMSM_Protection_MinDcBus_V
+                                            * Referenced by: '<S15>/Min_Vdc'
+                                            * DC-bus undervoltage threshold Owner=Safety; Version=2.1.0; Class=TunableCalibration.
+                                            */
+extern real32_T PMSM_StartThreshold_Rpm;/* Variable: PMSM_StartThreshold_Rpm
+                                         * Referenced by: '<Root>/Start_Threshold_Rpm'
+                                         * Legacy implicit-start threshold pending ARC-003 Owner=StateManager; Version=2.1.0; Class=TunableCalibration.
+                                         */
+extern uint16_T PMSM_Alignment_DurationTicks;/* Variable: PMSM_Alignment_DurationTicks
+                                              * Referenced by: '<Root>/Motor_Supervisor_1ms'
+                                              * Alignment duration in 1 ms supervisor ticks Owner=StateManager; Version=2.1.0; Class=TunableCalibration.
+                                              */
+extern uint16_T PMSM_Calibration_SampleCount;/* Variable: PMSM_Calibration_SampleCount
+                                              * Referenced by: '<S3>/Sample_Target'
+                                              * Current-offset averaging sample count Owner=Measurement; Version=2.1.0; Class=TunableCalibration.
+                                              */
+extern uint16_T PMSM_Calibration_TimeoutTicks;
+                                      /* Variable: PMSM_Calibration_TimeoutTicks
+                                       * Referenced by: '<Root>/Motor_Supervisor_1ms'
+                                       * Calibration timeout in 1 ms supervisor ticks Owner=StateManager; Version=2.1.0; Class=TunableCalibration.
+                                       */
 
 /* Model entry point functions */
 extern void PMSM_FOC_DualPlant_Controller_v21_initialize(void);
@@ -310,6 +346,7 @@ extern RT_MODEL_PMSM_FOC_DualPlant_C_T *const PMSM_FOC_DualPlant_Controlle_M;
  * Block '<Root>/CalibrationEnable_To_100us' : Eliminate redundant data type conversion
  * Block '<Root>/CalibrationReset_To_100us' : Eliminate redundant data type conversion
  * Block '<Root>/ControllerReset_To_100us' : Eliminate redundant data type conversion
+ * Block '<Root>/MeasurementValid_Echo' : Eliminate redundant data type conversion
  * Block '<Root>/SupervisorPwmEnable_To_100us' : Eliminate redundant data type conversion
  */
 

@@ -1,12 +1,18 @@
-function refactor_pmsm_foc_controller_v21
+function refactor_pmsm_foc_controller_v21(batchMode)
 %REFACTOR_PMSM_FOC_CONTROLLER_V21 Build an explicit cascaded dual-rate FOC.
-% The code-generation model keeps its 8 outputs and adds a seventh input for
-% explicit fault-reset acknowledgement. Both model
+% The code-generation model exposes typed command, measurement and status
+% buses while retaining scalar component boundaries internally. Both model
 % roots show the textbook cascade directly: 1 ms speed PI, explicit 1 ms to
 % 100 us rate transition, Clarke/Park feedback transforms, independent d/q
 % current PIs, decoupling, inverse transforms, SVPWM, inverter, and PMSM.
 % Rebuilding starts from a clean top-level wiring graph, so stale or dangling
 % red line segments cannot survive a refactor.
+
+if nargin < 1
+    batchMode = false;
+end
+assert(islogical(batchMode) && isscalar(batchMode), ...
+    'batchMode must be a scalar logical value.');
 
 versionDirectory = fileparts(mfilename('fullpath'));
 previousDirectory = pwd;
@@ -20,20 +26,29 @@ harnessFile = fullfile(versionDirectory, [harnessName '.slx']);
 
 load_system(controllerFile);
 load_system(harnessFile);
+create_pmsm_foc_data_dictionary_v21({controllerName, harnessName});
+fprintf('CODEX_FOC_STAGE=DATA_DICTIONARY_READY\n');
 
 buildControllerModelArchitecture(controllerName);
+fprintf('CODEX_FOC_STAGE=CONTROLLER_CORE_READY\n');
 buildHarnessArchitecture(harnessName);
+fprintf('CODEX_FOC_STAGE=HARNESS_CORE_READY\n');
 add_pmsm_foc_stateflow_v21;
-open_system(controllerName);
-set_param(controllerName, 'ZoomFactor', 'FitSystem');
-set_param(controllerName, 'ZoomFactor', '100');
-open_system(harnessName);
-set_param(harnessName, 'ZoomFactor', 'FitSystem');
-set_param(harnessName, 'ZoomFactor', '100');
+fprintf('CODEX_FOC_STAGE=STATEFLOW_READY\n');
+apply_pmsm_foc_bus_interface_v21(controllerName);
+fprintf('CODEX_FOC_STAGE=BUS_INTERFACE_READY\n');
+if ~batchMode
+    open_system(controllerName);
+    set_param(controllerName, 'ZoomFactor', 'FitSystem');
+    set_param(controllerName, 'ZoomFactor', '100');
+    open_system(harnessName);
+    set_param(harnessName, 'ZoomFactor', 'FitSystem');
+    set_param(harnessName, 'ZoomFactor', '100');
+end
 save_system(controllerName, controllerFile);
 save_system(harnessName, harnessFile);
 
-fprintf('CODEX_FOC_COMPONENTS=%d\n', 11);
+fprintf('CODEX_FOC_COMPONENTS=%d\n', 13);
 fprintf('CODEX_FOC_CONTROLLER_MODEL=%s\n', controllerName);
 fprintf('CODEX_FOC_HARNESS_MODEL=%s\n', harnessName);
 fprintf('CODEX_FOC_SPEED_TASK_S=0.001\n');
@@ -43,6 +58,7 @@ end
 
 function buildControllerModelArchitecture(modelName)
 resetTopLevelArchitecture(modelName);
+restoreControllerScalarInterface(modelName);
 buildTopLevelFocComponents(modelName, false);
 
 setBlockPosition(modelName, 'SpeedReferenceRpm', [20 55 50 69]);
@@ -105,6 +121,71 @@ add_line(modelName, 'SVPWM_Duty_Calculation/1', 'DutyA/1', 'autorouting', 'on');
 add_line(modelName, 'SVPWM_Duty_Calculation/2', 'DutyB/1', 'autorouting', 'on');
 add_line(modelName, 'SVPWM_Duty_Calculation/3', 'DutyC/1', 'autorouting', 'on');
 cleanupDanglingLines(modelName);
+end
+
+function restoreControllerScalarInterface(modelName)
+% Recreate the deterministic scalar implementation boundary before the Bus
+% wrapper is applied. This makes a non-clean rebuild as repeatable as a
+% rebuild starting from the v2.0.0 source model.
+portBlocks = [ ...
+    find_system(modelName, 'SearchDepth', 1, 'BlockType', 'Inport'); ...
+    find_system(modelName, 'SearchDepth', 1, 'BlockType', 'Outport')];
+for blockIndex = 1:numel(portBlocks)
+    delete_block(portBlocks{blockIndex});
+end
+wrapperBlocks = {'ControlCommand_Selector', 'Measurement_Selector', ...
+    'ControlStatus_Creator', 'FaultBits_U32', 'FaultCode_U16', ...
+    'StatusFault_To_100us', 'StatusState_To_100us', ...
+    'VoltageLimit_Inactive', 'MeasurementValid_Echo'};
+for blockIndex = 1:numel(wrapperBlocks)
+    path = [modelName '/' wrapperBlocks{blockIndex}];
+    if getSimulinkBlockHandle(path) ~= -1
+        delete_block(path);
+    end
+end
+deleteBlocksByPrefix(modelName, 'UnusedCommand_');
+deleteBlocksByPrefix(modelName, 'UnusedMeasurement_');
+
+inputDefinitions = { ...
+    'SpeedReferenceRpm', 1, [20 55 50 69], 'single'; ...
+    'SpeedRpm', 2, [20 120 50 134], 'single'; ...
+    'PhaseCurrentA', 3, [20 365 50 379], 'single'; ...
+    'PhaseCurrentB', 4, [20 425 50 439], 'single'; ...
+    'ElectricalAngleRad', 5, [20 485 50 499], 'single'; ...
+    'DcBusVoltage', 6, [20 545 50 559], 'single'};
+for inputIndex = 1:size(inputDefinitions, 1)
+    add_block('simulink/Sources/In1', ...
+        [modelName '/' inputDefinitions{inputIndex, 1}], ...
+        'Port', num2str(inputDefinitions{inputIndex, 2}), ...
+        'Position', inputDefinitions{inputIndex, 3}, ...
+        'OutDataTypeStr', inputDefinitions{inputIndex, 4});
+end
+outputDefinitions = { ...
+    'DutyA', 1, [1830 75 1860 89]; ...
+    'DutyB', 2, [1830 135 1860 149]; ...
+    'DutyC', 3, [1830 195 1860 209]; ...
+    'IqReference', 4, [510 20 540 34]; ...
+    'IdMeasured', 5, [850 365 880 379]; ...
+    'IqMeasured', 6, [850 405 880 419]; ...
+    'VdCommand', 7, [1140 70 1170 84]; ...
+    'VqCommand', 8, [1140 265 1170 279]};
+for outputIndex = 1:size(outputDefinitions, 1)
+    add_block('simulink/Sinks/Out1', ...
+        [modelName '/' outputDefinitions{outputIndex, 1}], ...
+        'Port', num2str(outputDefinitions{outputIndex, 2}), ...
+        'Position', outputDefinitions{outputIndex, 3}, ...
+        'OutDataTypeStr', 'single');
+end
+end
+
+function deleteBlocksByPrefix(modelName, prefix)
+blocks = find_system(modelName, 'SearchDepth', 1, 'Type', 'Block');
+for blockIndex = 1:numel(blocks)
+    [~, name] = fileparts(blocks{blockIndex});
+    if startsWith(name, prefix)
+        delete_block(blocks{blockIndex});
+    end
+end
 end
 
 function buildHarnessArchitecture(modelName)
@@ -491,7 +572,8 @@ addIn(parent, 'Iq', 3, [20 315 50 329]);
 addOut(parent, 'VdFeedforward', 1, [600 170 630 184]);
 addOut(parent, 'VqFeedforward', 2, [600 280 630 294]);
 addGain(parent, 'Electrical_Speed', ...
-    'NATIVE_RPM_TO_RAD_S*FOC_Native_PolePairs', [95 120 220 155]);
+    'single(NATIVE_RPM_TO_RAD_S)*single(FOC_Native_PolePairs)', ...
+    [95 120 220 155]);
 addProduct(parent, 'Omega_x_Iq', '**', [270 150 310 185]);
 addGain(parent, 'D_Decoupling', '-FOC_Native_Lq', [360 155 450 185]);
 addGain(parent, 'Ld_x_Id', 'FOC_Native_Ld', [250 245 325 275]);
@@ -672,122 +754,6 @@ addNote(parent, ['RESPONSIBILITY: common-mode injected SVPWM\n' ...
     'Duty=0.5+(Vphase+Voffset)/Vdc\n' ...
     'Limits: FOC_Native_DutyMin to FOC_Native_DutyMax'], ...
     [80 15 720 95], 11, 'blue', 'cyan');
-end
-
-function connections = captureExternalConnections(subsystemPath)
-% Preserve wiring at the subsystem boundary while its internal port blocks
-% are rebuilt. Deleting Inport/Outport blocks otherwise deletes the lines in
-% the parent model as a side effect.
-connections.ParentSystem = get_param(subsystemPath, 'Parent');
-portHandles = get_param(subsystemPath, 'PortHandles');
-connections.InputSources = cell(numel(portHandles.Inport), 1);
-connections.OutputDestinations = cell(numel(portHandles.Outport), 1);
-for index = 1:numel(portHandles.Inport)
-    lineHandle = get_param(portHandles.Inport(index), 'Line');
-    if lineHandle ~= -1
-        connections.InputSources{index} = ...
-            get_param(lineHandle, 'SrcPortHandle');
-    end
-end
-for index = 1:numel(portHandles.Outport)
-    lineHandle = get_param(portHandles.Outport(index), 'Line');
-    if lineHandle ~= -1
-        connections.OutputDestinations{index} = ...
-            get_param(lineHandle, 'DstPortHandle');
-    end
-end
-end
-
-function restoreExternalConnections(subsystemPath, connections)
-portHandles = get_param(subsystemPath, 'PortHandles');
-for index = 1:min(numel(portHandles.Inport), ...
-        numel(connections.InputSources))
-    sourcePort = connections.InputSources{index};
-    if ~isempty(sourcePort)
-        connectPorts(connections.ParentSystem, sourcePort, ...
-            portHandles.Inport(index));
-    end
-end
-for index = 1:min(numel(portHandles.Outport), ...
-        numel(connections.OutputDestinations))
-    destinationPorts = connections.OutputDestinations{index};
-    for destinationIndex = 1:numel(destinationPorts)
-        connectPorts(connections.ParentSystem, ...
-            portHandles.Outport(index), ...
-            destinationPorts(destinationIndex));
-    end
-end
-% Also fill any missing known boundary connections. This is needed when a
-% prior interrupted refactor retained only part of the interface; existing
-% destinations are skipped by connectPorts.
-restoreKnownExternalInterface(subsystemPath);
-end
-
-function restoreKnownExternalInterface(subsystemPath)
-parentSystem = get_param(subsystemPath, 'Parent');
-controllerPorts = get_param(subsystemPath, 'PortHandles');
-if strcmp(parentSystem, 'PMSM_FOC_DualPlant_Controller_v21')
-    sourceNames = {'SpeedReferenceRpm', 'SpeedRpm', 'PhaseCurrentA', ...
-        'PhaseCurrentB', 'ElectricalAngleRad', 'DcBusVoltage'};
-    destinationNames = {'DutyA', 'DutyB', 'DutyC', 'IqReference', ...
-        'IdMeasured', 'IqMeasured', 'VdCommand', 'VqCommand'};
-    for index = 1:numel(sourceNames)
-        sourcePorts = get_param([parentSystem '/' sourceNames{index}], ...
-            'PortHandles');
-        connectPorts(parentSystem, sourcePorts.Outport(1), ...
-            controllerPorts.Inport(index));
-    end
-    for index = 1:numel(destinationNames)
-        destinationPorts = get_param( ...
-            [parentSystem '/' destinationNames{index}], 'PortHandles');
-        connectPorts(parentSystem, controllerPorts.Outport(index), ...
-            destinationPorts.Inport(1));
-    end
-elseif strcmp(parentSystem, 'PMSM_FOC_DualPlant_ClosedLoop_v21')
-    sourceNames = {'Speed_Reference_Rpm', 'Selectable_PMSM_Plant', ...
-        'Selectable_PMSM_Plant', 'Selectable_PMSM_Plant', ...
-        'Selectable_PMSM_Plant', 'DC_Bus_48V'};
-    sourcePortNumbers = [1 1 3 4 2 1];
-    for index = 1:numel(sourceNames)
-        sourcePorts = get_param([parentSystem '/' sourceNames{index}], ...
-            'PortHandles');
-        connectPorts(parentSystem, ...
-            sourcePorts.Outport(sourcePortNumbers(index)), ...
-            controllerPorts.Inport(index));
-    end
-    inverterPorts = get_param([parentSystem '/Native_Average_Inverter'], ...
-        'PortHandles');
-    for index = 1:3
-        connectPorts(parentSystem, controllerPorts.Outport(index), ...
-            inverterPorts.Inport(index));
-    end
-    dutyLogPorts = get_param([parentSystem '/Duty_A_Log'], 'PortHandles');
-    iqReferenceLogPorts = get_param([parentSystem '/Iq_Ref_Log'], ...
-        'PortHandles');
-    connectPorts(parentSystem, controllerPorts.Outport(1), ...
-        dutyLogPorts.Inport(1));
-    connectPorts(parentSystem, controllerPorts.Outport(4), ...
-        iqReferenceLogPorts.Inport(1));
-else
-    error('Unsupported controller parent for boundary recovery: %s', ...
-        parentSystem);
-end
-end
-
-function connectPorts(parentSystem, sourcePort, destinationPort)
-% Adding a replacement Inport/Outport can automatically reattach a line in
-% some Simulink releases. A prior replacement can also leave a dangling
-% destination line whose source port no longer exists. Retain only the exact
-% expected connection and replace stale or mismatched lines.
-lineHandle = get_param(destinationPort, 'Line');
-if lineHandle ~= -1
-    currentSourcePort = get_param(lineHandle, 'SrcPortHandle');
-    if isequal(currentSourcePort, sourcePort)
-        return;
-    end
-    delete_line(lineHandle);
-end
-add_line(parentSystem, sourcePort, destinationPort, 'autorouting', 'on');
 end
 
 function addComponent(parent, name, position, color, description, attributes)

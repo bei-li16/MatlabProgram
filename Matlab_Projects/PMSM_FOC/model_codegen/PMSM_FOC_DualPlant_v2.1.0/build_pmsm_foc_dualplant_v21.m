@@ -1,9 +1,19 @@
-function build_pmsm_foc_dualplant_v21
+function runReport = build_pmsm_foc_dualplant_v21(varargin)
 %BUILD_PMSM_FOC_DUALPLANT_V21 Create a selectable native/MathWorks PMSM model.
 % The v2.0.0 native model remains unchanged. This builder copies it into a
 % new version package, adds the official Motor Control Blockset PMSM HDL
 % plant as a second Variant Subsystem choice, simulates both choices, and
 % regenerates the standalone ERT controller code.
+% Optional name/value arguments:
+%   CleanBuild - replace both v2.1.0 models with their v2.0.0 source models
+%                before applying the deterministic v2.1.0 refactor.
+%   BatchMode  - suppress opening model windows after the build.
+%   ExportImages - export model architecture PNG files. Disable this for
+%                  repeated CI builds to keep peak MATLAB memory bounded.
+
+options = parseBuildOptions(varargin{:});
+buildTimer = tic;
+buildStartedAt = currentTimestamp();
 
 versionDirectory = fileparts(mfilename('fullpath'));
 sourceDirectory = fullfile(fileparts(versionDirectory), ...
@@ -23,14 +33,27 @@ harnessFile = fullfile(versionDirectory, [harnessName '.slx']);
 
 assert(exist(sourceControllerFile, 'file') ~= 0, 'Source controller is missing.');
 assert(exist(sourceHarnessFile, 'file') ~= 0, 'Source harness is missing.');
+environmentReport = inspectBuildEnvironment(versionDirectory);
+verifyRequiredProducts(environmentReport);
 
 closeIfLoaded(controllerName);
 closeIfLoaded(harnessName);
-if exist(controllerFile, 'file') == 0
-    copyfile(sourceControllerFile, controllerFile);
-end
-if exist(harnessFile, 'file') == 0
-    copyfile(sourceHarnessFile, harnessFile);
+if options.CleanBuild
+    [controllerCopyOk, controllerCopyMessage] = copyfile( ...
+        sourceControllerFile, controllerFile, 'f');
+    assert(controllerCopyOk, 'Unable to reset controller model: %s', ...
+        controllerCopyMessage);
+    [harnessCopyOk, harnessCopyMessage] = copyfile( ...
+        sourceHarnessFile, harnessFile, 'f');
+    assert(harnessCopyOk, 'Unable to reset harness model: %s', ...
+        harnessCopyMessage);
+else
+    if exist(controllerFile, 'file') == 0
+        copyfile(sourceControllerFile, controllerFile);
+    end
+    if exist(harnessFile, 'file') == 0
+        copyfile(sourceHarnessFile, harnessFile);
+    end
 end
 
 load_system('simulink');
@@ -38,9 +61,13 @@ load_system('mcbhdlplantlib');
 load_system('simulink_hmi_blocks');
 load_system(controllerFile);
 load_system(harnessFile);
+if options.BatchMode
+    modelCleanup = onCleanup(@() discardAndCloseBuildModels( ...
+        controllerName, harnessName));
+end
 
 configureDualPlantHarness(harnessName, harnessFile, versionDirectory);
-refactor_pmsm_foc_controller_v21;
+refactor_pmsm_foc_controller_v21(options.BatchMode);
 
 nativeOutput = simulatePlant(harnessName, 1);
 mcbOutput = simulatePlant(harnessName, 2);
@@ -84,7 +111,9 @@ fprintf('CODEX_STATEFLOW_ACK_RESET_PASS=%d\n', faultResetReport.Pass);
 createComparisonPlot(nativeOutput, mcbOutput, versionDirectory);
 createStateflowTestPlot(mcbOutput, calibrationOutput, faultOutput, ...
     fastFaultOutput, faultResetOutput, versionDirectory);
-exportArchitectureImages(controllerName, harnessName, versionDirectory);
+if options.ExportImages
+    exportArchitectureImages(controllerName, harnessName, versionDirectory);
+end
 if ~(nativePass && mcbPass && stateflowReport.Pass && calibrationReport.Pass && ...
         faultReport.Pass && fastFaultReport.Pass && faultMatrixReport.Pass && ...
         faultResetReport.Pass)
@@ -95,13 +124,27 @@ setPlantSelection(harnessName, 2);
 save_system(harnessName, harnessFile);
 
 slbuild(controllerName);
+save_system(controllerName, controllerFile, ...
+    'OverwriteIfChangedOnDisk', true);
+save_system(harnessName, harnessFile, ...
+    'OverwriteIfChangedOnDisk', true);
 codeReport = inspectGeneratedControllerCode(controllerName, versionDirectory);
 variantReport = inspectVariantStructure(harnessName);
 architectureReport = inspectControllerArchitecture(controllerName, harnessName);
+buildCompletedAt = currentTimestamp();
+runReport = createBuildRunReport(controllerName, harnessName, options, ...
+    environmentReport, buildStartedAt, buildCompletedAt, toc(buildTimer), ...
+    nativeMetrics, mcbMetrics, nativePass, mcbPass, architectureReport, ...
+    codeReport, stateflowReport, calibrationReport, faultReport, ...
+    fastFaultReport, faultMatrixReport, faultResetReport);
 writeVerificationReport(versionDirectory, controllerName, harnessName, ...
     nativeMetrics, mcbMetrics, nativePass, mcbPass, variantReport, ...
     architectureReport, codeReport, stateflowReport, calibrationReport, ...
-    faultReport, fastFaultReport, faultMatrixReport, faultResetReport);
+    faultReport, fastFaultReport, faultMatrixReport, faultResetReport, ...
+    runReport);
+
+assert(runReport.OverallPass, ...
+    'Structure, code generation, or one or more verification scenarios failed.');
 
 fprintf('CODEX_DUAL_VARIANT_CHOICES=%d\n', variantReport.ChoiceCount);
 fprintf('CODEX_DUAL_MCB_REFERENCE_OK=%d\n', variantReport.McbReferencePresent);
@@ -122,8 +165,198 @@ fprintf('CODEX_DUAL_FAST_SAFETY_TASK_S=%.9g\n', ...
 fprintf('CODEX_DUAL_SLOW_SAFETY_TASK_S=%.9g\n', ...
     architectureReport.SlowSafetySampleTime);
 fprintf('CODEX_DUAL_DEFAULT_SELECTION=2\n');
+fprintf('CODEX_DUAL_CONTROLLER_CHECKSUM=%s\n', runReport.ControllerChecksum);
+fprintf('CODEX_DUAL_HARNESS_CHECKSUM=%s\n', runReport.HarnessChecksum);
+fprintf('CODEX_DUAL_BUILD_DURATION_S=%.9g\n', runReport.BuildDurationSeconds);
+fprintf('CODEX_DUAL_OVERALL_PASS=%d\n', runReport.OverallPass);
 
-open_system([harnessName '/Selectable_PMSM_Plant']);
+if options.BatchMode
+    close_system(harnessName, 0);
+    close_system(controllerName, 0);
+else
+    open_system([harnessName '/Selectable_PMSM_Plant']);
+end
+end
+
+function options = parseBuildOptions(varargin)
+parser = inputParser;
+parser.FunctionName = 'build_pmsm_foc_dualplant_v21';
+addParameter(parser, 'CleanBuild', false, ...
+    @(value) islogical(value) && isscalar(value));
+addParameter(parser, 'BatchMode', false, ...
+    @(value) islogical(value) && isscalar(value));
+addParameter(parser, 'ExportImages', true, ...
+    @(value) islogical(value) && isscalar(value));
+parse(parser, varargin{:});
+options = parser.Results;
+end
+
+function timestamp = currentTimestamp()
+value = datetime('now', 'TimeZone', 'local', ...
+    'Format', "yyyy-MM-dd'T'HH:mm:ssXXX");
+timestamp = char(value);
+end
+
+function report = inspectBuildEnvironment(versionDirectory)
+report.MATLABVersion = version;
+report.MATLABRelease = version('-release');
+report.Architecture = computer('arch');
+report.OperatingSystem = strtrim(system_dependent('getos'));
+
+requiredNames = {'MATLAB', 'Simulink', 'Stateflow', 'Simulink Coder', ...
+    'Embedded Coder', 'Motor Control Blockset'};
+licenseFeatures = {'MATLAB', 'Simulink', 'Stateflow', ...
+    'Real-Time_Workshop', 'RTW_Embedded_Coder', 'Motor_Control_Blockset'};
+installedProducts = ver;
+productTemplate = struct('Name', '', 'Version', '', 'Installed', false, ...
+    'LicenseFeature', '', 'LicenseAvailable', false);
+report.RequiredProducts = repmat(productTemplate, numel(requiredNames), 1);
+installedNames = {installedProducts.Name};
+for productIndex = 1:numel(requiredNames)
+    productName = requiredNames{productIndex};
+    installedIndex = find(strcmpi(installedNames, productName), 1);
+    report.RequiredProducts(productIndex).Name = productName;
+    report.RequiredProducts(productIndex).LicenseFeature = ...
+        licenseFeatures{productIndex};
+    if ~isempty(installedIndex)
+        report.RequiredProducts(productIndex).Installed = true;
+        report.RequiredProducts(productIndex).Version = ...
+            installedProducts(installedIndex).Version;
+    end
+    try
+        report.RequiredProducts(productIndex).LicenseAvailable = ...
+            logical(license('test', licenseFeatures{productIndex}));
+    catch
+        report.RequiredProducts(productIndex).LicenseAvailable = false;
+    end
+end
+
+[gitStatus, gitCommit] = system(sprintf( ...
+    'git -C "%s" rev-parse --verify HEAD', versionDirectory));
+if gitStatus == 0
+    report.GitCommit = strtrim(gitCommit);
+else
+    report.GitCommit = '<unavailable>';
+end
+[statusCommandResult, statusText] = system(sprintf( ...
+    'git -C "%s" status --porcelain --untracked-files=normal', ...
+    versionDirectory));
+if statusCommandResult == 0
+    report.GitStatus = strtrim(statusText);
+    report.GitWorkingTreeClean = isempty(report.GitStatus);
+    if report.GitWorkingTreeClean
+        report.GitStatusEntryCount = 0;
+    else
+        report.GitStatusEntryCount = numel(regexp( ...
+            report.GitStatus, '\r?\n', 'split'));
+    end
+else
+    report.GitStatus = '<unavailable>';
+    report.GitWorkingTreeClean = false;
+    report.GitStatusEntryCount = -1;
+end
+end
+
+function verifyRequiredProducts(environmentReport)
+missingProducts = {environmentReport.RequiredProducts( ...
+    ~[environmentReport.RequiredProducts.Installed]).Name};
+assert(isempty(missingProducts), 'Missing required MATLAB products: %s', ...
+    strjoin(missingProducts, ', '));
+end
+
+function report = createBuildRunReport(controllerName, harnessName, options, ...
+        environmentReport, buildStartedAt, buildCompletedAt, buildDuration, ...
+        nativeMetrics, mcbMetrics, nativePass, mcbPass, architectureReport, ...
+        codeReport, stateflowReport, calibrationReport, faultReport, ...
+        fastFaultReport, faultMatrixReport, faultResetReport)
+report.BuildStartedAt = buildStartedAt;
+report.BuildCompletedAt = buildCompletedAt;
+report.BuildDurationSeconds = buildDuration;
+report.CleanBuild = options.CleanBuild;
+report.BatchMode = options.BatchMode;
+report.ExportImages = options.ExportImages;
+report.Environment = environmentReport;
+report.ControllerChecksum = modelChecksum(controllerName);
+report.HarnessChecksum = modelChecksum(harnessName);
+report.ControllerConfiguration = captureModelConfiguration(controllerName);
+report.HarnessConfiguration = captureModelConfiguration(harnessName);
+report.ControllerInputCount = architectureReport.ControllerInputCount;
+report.ControllerOutputCount = architectureReport.ControllerOutputCount;
+report.ComponentCount = architectureReport.ComponentCount;
+report.StateflowStateCount = architectureReport.StateflowStateCount;
+report.ControllerDanglingLines = architectureReport.ControllerDanglingLines;
+report.HarnessDanglingLines = architectureReport.HarnessDanglingLines;
+report.InterfaceSignature = sprintf('%dBI-%dBO-%dC-%dS', ...
+    report.ControllerInputCount, report.ControllerOutputCount, ...
+    report.ComponentCount, report.StateflowStateCount);
+report.NativeMetrics = compactMetrics(nativeMetrics);
+report.McbMetrics = compactMetrics(mcbMetrics);
+report.NativePass = nativePass;
+report.McbPass = mcbPass;
+report.ArchitecturePass = architectureReport.Pass;
+report.CodePass = codeReport.Pass;
+report.StateflowPass = stateflowReport.Pass;
+report.CalibrationPass = calibrationReport.Pass;
+report.FaultPass = faultReport.Pass;
+report.FastFaultPass = fastFaultReport.Pass;
+report.FaultMatrixPass = faultMatrixReport.Pass;
+report.FaultResetPass = faultResetReport.Pass;
+report.OverallPass = report.NativePass && report.McbPass && ...
+    report.ArchitecturePass && report.CodePass && report.StateflowPass && ...
+    report.CalibrationPass && report.FaultPass && report.FastFaultPass && ...
+    report.FaultMatrixPass && report.FaultResetPass;
+end
+
+function result = compactMetrics(metrics)
+result.FinalSpeedRpm = metrics.FinalSpeedRpm;
+result.MaximumSpeedRpm = metrics.MaximumSpeedRpm;
+result.MinimumSpeedRpm = metrics.MinimumSpeedRpm;
+result.MaximumAbsIqA = metrics.MaximumAbsIqA;
+result.MinimumDuty = metrics.MinimumDuty;
+result.MaximumDuty = metrics.MaximumDuty;
+result.FinalTorqueNm = metrics.FinalTorqueNm;
+result.Finite = metrics.Finite;
+end
+
+function value = modelChecksum(modelName)
+checksum = Simulink.BlockDiagram.getChecksum(modelName);
+if isstruct(checksum) && isfield(checksum, 'Value')
+    checksumValue = checksum.Value;
+else
+    checksumValue = checksum;
+end
+if isnumeric(checksumValue)
+    value = char(join(compose('%08X', checksumValue), ''));
+else
+    value = char(string(checksumValue));
+end
+end
+
+function configuration = captureModelConfiguration(modelName)
+parameterNames = {'SolverType', 'Solver', 'FixedStep', ...
+    'SystemTargetFile', 'ProdHWDeviceType', 'CodeInterfacePackaging', ...
+    'MultiTasking', 'GenerateReport', 'Toolchain'};
+for parameterIndex = 1:numel(parameterNames)
+    parameterName = parameterNames{parameterIndex};
+    try
+        configuration.(parameterName) = valueToText( ...
+            get_param(modelName, parameterName));
+    catch
+        configuration.(parameterName) = '<unavailable>';
+    end
+end
+end
+
+function textValue = valueToText(value)
+if ischar(value)
+    textValue = value;
+elseif isstring(value)
+    textValue = char(join(value, ','));
+elseif isnumeric(value) || islogical(value)
+    textValue = mat2str(value);
+else
+    textValue = char(string(value));
+end
 end
 
 function configureDualPlantHarness(modelName, modelFile, versionDirectory)
@@ -155,8 +388,6 @@ if getSimulinkBlockHandle(variantPath) == -1
     set_param(mcbChoicePath, 'VariantControl', ...
         'PMSM_PLANT_SELECTION == 2');
 
-    % Refresh the compiled interface after adding the second choice.
-    set_param(modelName, 'SimulationCommand', 'update');
 end
 
 % convertToVariantSubsystem creates label-mode variants. Enforce expression
@@ -166,6 +397,9 @@ set_param([variantPath '/Native_Discrete_PMSM'], 'VariantControl', ...
 set_param([variantPath '/MathWorks_MCB_PMSM_HDL'], 'VariantControl', ...
     'PMSM_PLANT_SELECTION == 2');
 set_param(variantPath, 'VariantControlMode', 'expression');
+% Refresh only after both expressions and the control mode are valid. A
+% clean v2.0.0 conversion otherwise tries to update a deleted label choice.
+set_param(modelName, 'SimulationCommand', 'update');
 
 buttonPath = [modelName '/Switch_PMSM_Plant'];
 if getSimulinkBlockHandle(buttonPath) == -1
@@ -178,6 +412,10 @@ removeLegacyOneClickAnnotation(modelName);
 set_param(modelName, 'StopTime', '2.0');
 set_param(modelName, 'SolverType', 'Fixed-step', ...
     'Solver', 'FixedStepDiscrete', 'FixedStep', '0.0001');
+loadTorquePath = [modelName '/Load_Torque_Nm'];
+if getSimulinkBlockHandle(loadTorquePath) ~= -1
+    set_param(loadTorquePath, 'After', 'single(0.2)');
+end
 % Do not compile here: an older on-disk Stateflow integration may be loaded
 % briefly and is rebuilt immediately below by the refactor step.
 modelWorkspace = get_param(modelName, 'ModelWorkspace');
@@ -326,7 +564,7 @@ end
 function removeLegacyOneClickAnnotation(modelName)
 marker = 'ONE-CLICK PMSM PLANT SWITCH';
 annotationHandles = find_system(modelName, 'FindAll', 'on', ...
-    'Type', 'annotation');
+    'MatchFilter', @Simulink.match.allVariants, 'Type', 'annotation');
 for annotationIndex = 1:numel(annotationHandles)
     candidate = get_param(annotationHandles(annotationIndex), 'Object');
     if contains(candidate.Text, marker)
@@ -920,6 +1158,13 @@ assert(exist(sourceFile, 'file') ~= 0, 'Generated controller C source is missing
 assert(exist(headerFile, 'file') ~= 0, 'Generated controller header is missing.');
 sourceText = fileread(sourceFile);
 headerText = fileread(headerFile);
+generatedFiles = [dir(fullfile(codeDirectory, '*.c')); ...
+    dir(fullfile(codeDirectory, '*.h'))];
+generatedText = '';
+for generatedIndex = 1:numel(generatedFiles)
+    generatedText = [generatedText newline fileread(fullfile( ...
+        generatedFiles(generatedIndex).folder, generatedFiles(generatedIndex).name))]; %#ok<AGROW>
+end
 report.HasStep = contains(sourceText, [controllerName '_step(void)']);
 report.HasInitialize = contains(sourceText, [controllerName '_initialize(void)']);
 report.HasInputs = contains(headerText, 'External inputs');
@@ -937,11 +1182,17 @@ report.HasFastSafety = contains(sourceText, 'Fault_Latch_State') && ...
 report.HasSlowSafety = contains(sourceText, 'OverSpeed') && ...
     contains(sourceText, 'UnderVoltage') && contains(sourceText, 'OverVoltage');
 report.HasDualRateScheduler = contains(sourceText, 'TaskCounters.TID[1]');
+report.HasControlCommandBus = contains(generatedText, 'ControlCommandBus');
+report.HasMeasurementBus = contains(generatedText, 'MeasurementBus');
+report.HasControlStatusBus = contains(generatedText, 'ControlStatusBus');
+report.HasBusInterfaceTypes = report.HasControlCommandBus && ...
+    report.HasMeasurementBus && report.HasControlStatusBus;
 report.SinfCallCount = numel(regexp(sourceText, 'sinf\s*\(', 'match'));
 report.CosfCallCount = numel(regexp(sourceText, 'cosf\s*\(', 'match'));
 report.Pass = report.HasStep && report.HasInitialize && report.HasInputs && ...
     report.HasOutputs && report.HasStateflow && report.HasFastSafety && ...
     report.HasSlowSafety && report.HasDualRateScheduler && ...
+    report.HasBusInterfaceTypes && ...
     report.SinfCallCount == 1 && report.CosfCallCount == 1 && ...
     ~report.HasSFunction;
 end
@@ -1032,8 +1283,30 @@ controllerOutports = find_system(controllerName, 'SearchDepth', 1, ...
     'BlockType', 'Outport');
 report.ControllerInputCount = numel(controllerInports);
 report.ControllerOutputCount = numel(controllerOutports);
-report.FaultResetAckPortPresent = getSimulinkBlockHandle( ...
-    [controllerName '/FaultResetAck']) ~= -1;
+report.LegacyScalarFaultResetPortAbsent = getSimulinkBlockHandle( ...
+    [controllerName '/FaultResetAck']) == -1;
+report.ControlCommandBusPortPresent = typedRootPortPresent(controllerName, ...
+    'ControlCommand', 'Bus: ControlCommandBus');
+report.MeasurementBusPortPresent = typedRootPortPresent(controllerName, ...
+    'Measurement', 'Bus: MeasurementBus');
+report.ControlStatusBusPortPresent = typedRootPortPresent(controllerName, ...
+    'ControlStatus', 'Bus: ControlStatusBus');
+report.BusInterfacePresent = report.ControlCommandBusPortPresent && ...
+    report.MeasurementBusPortPresent && report.ControlStatusBusPortPresent;
+[report.DataDictionaryPresent, report.ParameterCatalogCount, ...
+    report.InterfaceCatalogCount, report.DataDictionaryVersion, ...
+    report.ControlCommandElementsPresent, ...
+    report.MeasurementElementsPresent, report.ControlStatusElementsPresent, ...
+    report.CalibrationElementsPresent, report.FaultResetRequestElementPresent, ...
+    report.MigratedParameterShadowCount] = inspectDataDictionaryContracts( ...
+    controllerName, harnessName);
+report.DataContractPresent = report.DataDictionaryPresent && ...
+    report.ParameterCatalogCount >= 25 && report.InterfaceCatalogCount >= 35 && ...
+    strcmp(report.DataDictionaryVersion, '2.1.0') && ...
+    report.ControlCommandElementsPresent && report.MeasurementElementsPresent && ...
+    report.ControlStatusElementsPresent && report.CalibrationElementsPresent && ...
+    report.FaultResetRequestElementPresent && ...
+    report.MigratedParameterShadowCount == 0;
 report.CalibrationComponentPresent = getSimulinkBlockHandle( ...
     [controllerName '/Current_Offset_Calibration_100us']) ~= -1 && ...
     getSimulinkBlockHandle( ...
@@ -1076,8 +1349,9 @@ report.Pass = report.ControllerComponentsPresent && ...
     report.AlignmentEnableOutputPresent && report.ControllerResetOutputPresent && ...
     report.AcknowledgedFaultTransitionPresent && ...
     report.CalibrationDoneTransitionPresent && report.RunStopToInitPresent && ...
-    report.AlignStopToInitPresent && report.ControllerInputCount == 7 && ...
-    report.ControllerOutputCount == 8 && report.FaultResetAckPortPresent && ...
+    report.AlignStopToInitPresent && report.ControllerInputCount == 2 && ...
+    report.ControllerOutputCount == 1 && report.BusInterfacePresent && ...
+    report.LegacyScalarFaultResetPortAbsent && report.DataContractPresent && ...
     report.CalibrationComponentPresent && report.AlignmentComponentPresent && ...
     report.PiResetPortsPresent && report.SharedTrigPresent && ...
     abs(report.StateflowSampleTime - 0.001) < eps && ...
@@ -1087,6 +1361,84 @@ report.Pass = report.ControllerComponentsPresent && ...
     abs(report.SlowSafetySampleTime - 0.001) < eps && ...
     report.ControllerDanglingLines == 0 && ...
     report.HarnessDanglingLines == 0;
+end
+
+function present = typedRootPortPresent(modelName, blockName, dataType)
+path = [modelName '/' blockName];
+present = getSimulinkBlockHandle(path) ~= -1 && ...
+    strcmp(get_param(path, 'OutDataTypeStr'), dataType);
+end
+
+function [dictionaryPresent, parameterCount, interfaceCount, version, ...
+        commandPresent, measurementPresent, statusPresent, calibrationPresent, ...
+        resetPresent, shadowCount] = inspectDataDictionaryContracts( ...
+        controllerName, harnessName)
+dictionaryName = 'PMSM_FOC_Data.sldd';
+dictionaryPresent = endsWith(get_param(controllerName, 'DataDictionary'), ...
+    dictionaryName) && endsWith(get_param(harnessName, 'DataDictionary'), ...
+    dictionaryName);
+parameterCount = 0;
+interfaceCount = 0;
+version = '';
+commandPresent = false;
+measurementPresent = false;
+statusPresent = false;
+calibrationPresent = false;
+resetPresent = false;
+shadowCount = Inf;
+if ~dictionaryPresent
+    return;
+end
+try
+    parameterCatalog = Simulink.data.evalinGlobal(controllerName, ...
+        'PMSM_FOC_Parameter_Catalog');
+    interfaceCatalog = Simulink.data.evalinGlobal(controllerName, ...
+        'PMSM_FOC_Interface_Catalog');
+    version = Simulink.data.evalinGlobal(controllerName, ...
+        'PMSM_FOC_Parameter_Set_Version');
+    commandBus = Simulink.data.evalinGlobal(controllerName, ...
+        'ControlCommandBus');
+    measurementBus = Simulink.data.evalinGlobal(controllerName, ...
+        'MeasurementBus');
+    statusBus = Simulink.data.evalinGlobal(controllerName, ...
+        'ControlStatusBus');
+    calibrationBus = Simulink.data.evalinGlobal(controllerName, ...
+        'CalibrationBus');
+    parameterCount = numel(parameterCatalog);
+    interfaceCount = numel(interfaceCatalog);
+    commandNames = {commandBus.Elements.Name};
+    measurementNames = {measurementBus.Elements.Name};
+    statusNames = {statusBus.Elements.Name};
+    calibrationNames = {calibrationBus.Elements.Name};
+    commandPresent = isequal(commandNames, {'StartRequest', 'StopRequest', ...
+        'EmergencyStop', 'Direction', 'SpeedReferenceRpm', ...
+        'TorqueReferenceNm', 'FaultResetRequest'});
+    measurementPresent = isequal(measurementNames, {'PhaseCurrentA', ...
+        'PhaseCurrentB', 'PhaseCurrentC', 'DcBusVoltage', ...
+        'ElectricalAngleRad', 'MechanicalSpeedRpm', 'Valid', ...
+        'TimestampSeconds', 'FreshnessTicks'});
+    statusPresent = isequal(statusNames, {'DutyA', 'DutyB', 'DutyC', ...
+        'IqReference', 'IdMeasured', 'IqMeasured', 'VdCommand', 'VqCommand', ...
+        'PwmEnable', 'MotorStateCode', 'FaultBits', 'FaultCode', ...
+        'CurrentLimitActive', 'VoltageLimitActive', 'MeasurementValid'});
+    calibrationPresent = isequal(calibrationNames, { ...
+        'PhaseCurrentOffsetA', 'PhaseCurrentOffsetB', 'AlignmentVd', ...
+        'AlignmentVq', 'AlignmentDurationTicks', 'SampleCount', ...
+        'ParameterSetVersion', 'ParameterSetCrc'});
+    resetPresent = any(strcmp(commandNames, 'FaultResetRequest'));
+    controllerWorkspace = get_param(controllerName, 'ModelWorkspace');
+    harnessWorkspace = get_param(harnessName, 'ModelWorkspace');
+    shadowCount = 0;
+    for parameterIndex = 1:numel(parameterCatalog)
+        parameterName = parameterCatalog(parameterIndex).Name;
+        shadowCount = shadowCount + double( ...
+            controllerWorkspace.hasVariable(parameterName));
+        shadowCount = shadowCount + double( ...
+            harnessWorkspace.hasVariable(parameterName));
+    end
+catch
+    dictionaryPresent = false;
+end
 end
 
 function present = hasStateflowTransition(chart, sourceName, ...
@@ -1123,12 +1475,14 @@ end
 function writeVerificationReport(versionDirectory, controllerName, harnessName, ...
         nativeMetrics, mcbMetrics, nativePass, mcbPass, variantReport, ...
         architectureReport, codeReport, stateflowReport, calibrationReport, ...
-        faultReport, fastFaultReport, faultMatrixReport, faultResetReport)
+        faultReport, fastFaultReport, faultMatrixReport, faultResetReport, ...
+        runReport)
 reportPath = fullfile(versionDirectory, 'verification_report.txt');
 reportHandle = fopen(reportPath, 'w');
 assert(reportHandle ~= -1, 'Unable to create verification report.');
 reportCleanup = onCleanup(@() fclose(reportHandle));
 fprintf(reportHandle, 'PMSM FOC Dual Plant v2.1.0 verification\n');
+writeBuildManifest(reportHandle, runReport);
 fprintf(reportHandle, 'Controller model: %s\n', controllerName);
 fprintf(reportHandle, 'Closed-loop model: %s\n', harnessName);
 fprintf(reportHandle, 'Default selection: 2 (MathWorks MCB PMSM HDL)\n');
@@ -1169,8 +1523,30 @@ fprintf(reportHandle, 'Stateflow state count: %d\n', ...
     architectureReport.StateflowStateCount);
 fprintf(reportHandle, 'Stateflow SUPERVISED domain present: %d\n', ...
     architectureReport.StateflowSuperstatePresent);
-fprintf(reportHandle, 'Explicit FaultResetAck port present: %d\n', ...
-    architectureReport.FaultResetAckPortPresent);
+fprintf(reportHandle, 'Legacy scalar FaultResetAck port absent: %d\n', ...
+    architectureReport.LegacyScalarFaultResetPortAbsent);
+fprintf(reportHandle, 'Typed Bus interface present: %d\n', ...
+    architectureReport.BusInterfacePresent);
+fprintf(reportHandle, 'Data dictionary present: %d\n', ...
+    architectureReport.DataDictionaryPresent);
+fprintf(reportHandle, 'Data dictionary parameter count: %d\n', ...
+    architectureReport.ParameterCatalogCount);
+fprintf(reportHandle, 'Data dictionary interface element count: %d\n', ...
+    architectureReport.InterfaceCatalogCount);
+fprintf(reportHandle, 'Data dictionary parameter-set version: %s\n', ...
+    architectureReport.DataDictionaryVersion);
+fprintf(reportHandle, 'ControlCommandBus elements verified: %d\n', ...
+    architectureReport.ControlCommandElementsPresent);
+fprintf(reportHandle, 'MeasurementBus elements verified: %d\n', ...
+    architectureReport.MeasurementElementsPresent);
+fprintf(reportHandle, 'ControlStatusBus elements verified: %d\n', ...
+    architectureReport.ControlStatusElementsPresent);
+fprintf(reportHandle, 'CalibrationBus elements verified: %d\n', ...
+    architectureReport.CalibrationElementsPresent);
+fprintf(reportHandle, 'FaultResetRequest Bus element present: %d\n', ...
+    architectureReport.FaultResetRequestElementPresent);
+fprintf(reportHandle, 'Migrated parameter model-workspace shadows: %d\n', ...
+    architectureReport.MigratedParameterShadowCount);
 fprintf(reportHandle, 'Acknowledged FAULT reset transition present: %d\n', ...
     architectureReport.AcknowledgedFaultTransitionPresent);
 fprintf(reportHandle, 'CALIB done transition present: %d\n', ...
@@ -1286,12 +1662,66 @@ fprintf(reportHandle, 'Generated slow-safety logic present: %d\n', ...
     codeReport.HasSlowSafety);
 fprintf(reportHandle, 'Generated dual-rate scheduler present: %d\n', ...
     codeReport.HasDualRateScheduler);
+fprintf(reportHandle, 'Generated ControlCommandBus type present: %d\n', ...
+    codeReport.HasControlCommandBus);
+fprintf(reportHandle, 'Generated MeasurementBus type present: %d\n', ...
+    codeReport.HasMeasurementBus);
+fprintf(reportHandle, 'Generated ControlStatusBus type present: %d\n', ...
+    codeReport.HasControlStatusBus);
 fprintf(reportHandle, 'Generated sinf call count: %d\n', ...
     codeReport.SinfCallCount);
 fprintf(reportHandle, 'Generated cosf call count: %d\n', ...
     codeReport.CosfCallCount);
 fprintf(reportHandle, 'Generated S-Function text present: %d\n', codeReport.HasSFunction);
 fprintf(reportHandle, 'Code verification pass: %d\n', codeReport.Pass);
+fprintf(reportHandle, 'Overall verification pass: %d\n', runReport.OverallPass);
+end
+
+function writeBuildManifest(reportHandle, runReport)
+fprintf(reportHandle, 'Build started at: %s\n', runReport.BuildStartedAt);
+fprintf(reportHandle, 'Build completed at: %s\n', runReport.BuildCompletedAt);
+fprintf(reportHandle, 'Build duration s: %.9g\n', runReport.BuildDurationSeconds);
+fprintf(reportHandle, 'Clean build performed: %d\n', runReport.CleanBuild);
+fprintf(reportHandle, 'Batch mode: %d\n', runReport.BatchMode);
+fprintf(reportHandle, 'Architecture images exported: %d\n', ...
+    runReport.ExportImages);
+fprintf(reportHandle, 'MATLAB version: %s\n', ...
+    runReport.Environment.MATLABVersion);
+fprintf(reportHandle, 'MATLAB release: %s\n', ...
+    runReport.Environment.MATLABRelease);
+fprintf(reportHandle, 'Host architecture: %s\n', ...
+    runReport.Environment.Architecture);
+fprintf(reportHandle, 'Operating system: %s\n', ...
+    runReport.Environment.OperatingSystem);
+fprintf(reportHandle, 'Git commit at build: %s\n', ...
+    runReport.Environment.GitCommit);
+fprintf(reportHandle, 'Git working tree clean at build start: %d\n', ...
+    runReport.Environment.GitWorkingTreeClean);
+fprintf(reportHandle, 'Git status entry count at build start: %d\n', ...
+    runReport.Environment.GitStatusEntryCount);
+for productIndex = 1:numel(runReport.Environment.RequiredProducts)
+    product = runReport.Environment.RequiredProducts(productIndex);
+    fprintf(reportHandle, 'Required product %s: installed=%d, version=%s, license=%d\n', ...
+        product.Name, product.Installed, product.Version, product.LicenseAvailable);
+end
+fprintf(reportHandle, 'Controller semantic checksum: %s\n', ...
+    runReport.ControllerChecksum);
+fprintf(reportHandle, 'Harness semantic checksum: %s\n', ...
+    runReport.HarnessChecksum);
+fprintf(reportHandle, 'Generated interface signature: %s\n', ...
+    runReport.InterfaceSignature);
+writeConfiguration(reportHandle, 'Controller', ...
+    runReport.ControllerConfiguration);
+writeConfiguration(reportHandle, 'Harness', runReport.HarnessConfiguration);
+end
+
+function writeConfiguration(reportHandle, label, configuration)
+parameterNames = fieldnames(configuration);
+for parameterIndex = 1:numel(parameterNames)
+    parameterName = parameterNames{parameterIndex};
+    fprintf(reportHandle, '%s configuration %s: %s\n', label, ...
+        parameterName, configuration.(parameterName));
+end
 end
 
 function writeMetrics(reportHandle, label, metrics, pass)
@@ -1331,5 +1761,23 @@ end
 function closeIfLoaded(modelName)
 if bdIsLoaded(modelName)
     close_system(modelName, 0);
+end
+end
+
+function discardAndCloseBuildModels(controllerName, harnessName)
+% Prevent an interrupted batch build from leaving dirty, locked models.
+modelNames = {harnessName, controllerName};
+for modelIndex = 1:numel(modelNames)
+    modelName = modelNames{modelIndex};
+    if bdIsLoaded(modelName)
+        try
+            set_param(modelName, 'Dirty', 'off');
+            close_system(modelName, 0);
+        catch cleanupError
+            warning('PMSMFOC:BatchCleanupFailed', ...
+                'Unable to close batch model %s: %s', ...
+                modelName, cleanupError.message);
+        end
+    end
 end
 end

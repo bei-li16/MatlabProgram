@@ -6,15 +6,21 @@
 
 - `PMSM_FOC_DualPlant_ClosedLoop_v21.slx`：闭环仿真顶层模型。
 - `PMSM_FOC_DualPlant_Controller_v21.slx`：可独立生成 ERT C 代码的控制器模型。
+- `PMSM_FOC_Data.sldd`：31 个控制/保护参数、四类 Bus 对象及参数/接口元数据的唯一设计数据源。
+- `create_pmsm_foc_data_dictionary_v21.m`：幂等创建/更新数据字典、参数分类、接口目录和版本/CRC 策略。
+- `apply_pmsm_foc_bus_interface_v21.m`：将控制器标量内部实现封装为两个输入 Bus 和一个状态输出 Bus。
 - `build_pmsm_foc_dualplant_v21.m`：配置模型、依次仿真两个电机对象、绘图、导出架构图、生成代码并写入验收报告。
+- `verify_pmsm_foc_reproducibility_v21.m`：连续执行两次完全清理重建并比较模型语义校验和、配置、接口和数值结果。
 - `refactor_pmsm_foc_controller_v21.m`：清空旧顶层连线，并按经典级联 FOC 拓扑重建两个 v2.1.0 模型。
 - `add_pmsm_foc_stateflow_v21.m`：幂等集成 Stateflow 状态机、电流偏置校准、转子对齐、安全监测和 PWM 门控。
 - `switch_pmsm_plant_v21.m`：停止仿真时切换 Variant 选择。
 - `verification_report.txt`：最近一次自动验收数据。
+- `baseline_reproducibility_report.txt`：两次 clean build 的可复现性对比证据。
 - `PMSM_FOC_DualPlant_v21_results.png`：关键曲线对比。
 - `PMSM_FOC_DualPlant_v21_stateflow_results.png`：正常启动与故障注入状态曲线。
 - `doc/PMSM_FOC_DualPlant_v2.1.0_Architecture_and_Test_Manual.tex`：架构与测试手册 LaTeX 源文件。
 - `doc/PMSM_FOC_DualPlant_v2.1.0_Architecture_and_Test_Manual.pdf`：编译后的完整手册。
+- `doc/PMSM_FOC_v2.1.0_Requirements_Traceability_Matrix.md`：M0～M10 的 22 条唯一需求及模型、代码、测试、证据和风险映射。
 
 ## 模型架构
 
@@ -51,20 +57,37 @@ DQ 电压 -> 对齐覆盖 -> 逆 Park -> 逆 Clarke -> SVPWM -> 快速安全门 
 | 组件 | 单一责任 | 主要接口 | 关键参数或约束 |
 | --- | --- | --- | --- |
 | `Speed_PI_Controller_1ms` | 将速度误差转换为 q 轴电流给定，构成速度外环 | `SpeedReferenceRpm`, `SpeedRpm` → `IqReference` | 独立 1 ms 任务；`FOC_Native_KpSpeed`、`FOC_Native_KiSpeed`；±`FOC_Native_IqLimit` |
-| `Current_Offset_Calibration_100us` | 对静止电流采样求均值并保持 A/B 相偏置，输出校正电流 | Raw Ia/Ib、校准使能/复位 → Corrected Ia/Ib、Offset、Done | 100 us；100 样本；INIT/FAULT 清零 |
+| `Current_Offset_Calibration_100us` | 对静止电流采样求均值并保持 A/B 相偏置，输出校正电流 | Raw Ia/Ib、校准使能/复位 → Corrected Ia/Ib、Offset、Done | 100 us；`PMSM_Calibration_SampleCount`；INIT/FAULT 清零 |
 | `Clarke_Transform` | 两相采样电流转换到静止 α/β 坐标系 | `Ia`, `Ib` → `Ialpha`, `Ibeta` | `Ialpha=Ia`；`Ibeta=(Ia+2Ib)/sqrt(3)` |
 | `Electrical_Angle_Trig_100us` | 每个快周期只计算一次电角度基函数并共享 | `ThetaElectrical` → `SinTheta`, `CosTheta` | 100 us；Park/逆 Park 共用一对 sin/cos |
 | `Park_Transform` | α/β 电流转换到旋转 d/q 坐标系 | `Ialpha`, `Ibeta`, `SinTheta`, `CosTheta` → `Id`, `Iq` | 使用共享角度基函数；100 us 数据通路 |
-| `D_Axis_Current_PI` | 将 d 轴电流调节到 0 A | `Reference=0`, `Id` → `VdPI` | 100 us；电流 PI 参数；积分器限幅 ±30 |
-| `Q_Axis_Current_PI` | 跟踪速度环给出的 q 轴电流 | `IqReference`, `Iq` → `VqPI` | 100 us；电流 PI 参数；积分器限幅 ±30 |
+| `D_Axis_Current_PI` | 将 d 轴电流调节到 0 A | `Reference=0`, `Id` → `VdPI` | 100 us；电流 PI 参数；±`FOC_Native_CurrentIntegratorLimit` |
+| `Q_Axis_Current_PI` | 跟踪速度环给出的 q 轴电流 | `IqReference`, `Iq` → `VqPI` | 100 us；电流 PI 参数；±`FOC_Native_CurrentIntegratorLimit` |
 | `DQ_Decoupling_Feedforward` | 补偿 d/q 轴交叉耦合与反电动势 | `SpeedRpm`, `Id`, `Iq` → `VdFeedforward`, `VqFeedforward` | 极对数、`Ld`、`Lq`、永磁磁链 |
-| `DQ_Voltage_Command` | 合并 PI 与前馈项并形成有界电压指令 | PI/前馈电压 → `VdCommand`, `VqCommand` | d/q 轴分别限幅至 ±26 V |
-| `Alignment_DQ_Override_100us` | 仅在 ALIGN 状态选择固定对齐电压和角度基函数 | FOC Vd/Vq、反馈 sin/cos、`AlignmentEnable` → Applied Vd/Vq/Sin/Cos | `Vd=2 V`、`Vq=0 V`、`sin=0`、`cos=1` |
+| `DQ_Voltage_Command` | 合并 PI 与前馈项并形成有界电压指令 | PI/前馈电压 → `VdCommand`, `VqCommand` | d/q 轴分别限幅至 ±`FOC_Native_VoltageLimit` |
+| `Alignment_DQ_Override_100us` | 仅在 ALIGN 状态选择固定对齐电压和角度基函数 | FOC Vd/Vq、反馈 sin/cos、`AlignmentEnable` → Applied Vd/Vq/Sin/Cos | `PMSM_Alignment_*` 字典参数 |
 | `Inverse_Park_Transform` | d/q 电压转换回静止 α/β 坐标系 | `Vd`, `Vq`, `SinTheta`, `CosTheta` → `Valpha`, `Vbeta` | 与 Park 共用同一 sin/cos |
 | `Inverse_Clarke_Transform` | α/β 电压转换为三相电压 | `Valpha`, `Vbeta` → `Va`, `Vb`, `Vc` | `Va=Valpha`；B/C 相使用 ±`sqrt(3)/2` |
 | `SVPWM_Duty_Calculation` | 公共模注入、母线归一化和占空比限幅 | `Va`, `Vb`, `Vc`, `Vdc` → `DutyA/B/C` | `Voffset=-0.5(max+min)`；占空比 0.02～0.98 |
 
-速度环与电流环不再混放在同一个顶层控制器块内。100 us 快任务只保留电流采样校准、Clarke/Park、D/Q 电流 PI、解耦、电压合成、对齐选择、逆变换、SVPWM 和过流最终门控；1 ms 慢任务负责速度 PI、Stateflow 模式转换、过速与母线电压监测。快到慢的锁存故障和校准完成量使用 Rate Transition；慢到快的标量布尔命令采用显式布尔保持边界，由快任务读取最近的 1 ms 值，不复制一套 100 us 状态任务。控制器采用 7 输入/8 输出接口，第 7 个输入 `FaultResetAck` 是故障复位的显式用户确认。重构脚本每次删除旧顶层信号线并按已知拓扑完整重连，两个模型的悬空线检查均为 0。
+速度环与电流环不再混放在同一个顶层控制器块内。100 us 快任务只保留电流采样校准、Clarke/Park、D/Q 电流 PI、解耦、电压合成、对齐选择、逆变换、SVPWM 和过流最终门控；1 ms 慢任务负责速度 PI、Stateflow 模式转换、过速与母线电压监测。快到慢的锁存故障和校准完成量使用 Rate Transition；慢到快的命令/状态采用显式保持边界，由快任务读取最近的 1 ms 值，不复制一套 100 us 状态任务。
+
+独立控制器根接口已由 7 入/8 出标量改为 `ControlCommandBus`、`MeasurementBus` 两个输入和 `ControlStatusBus` 一个输出，生成签名为 `2BI-1BO-13C-6S`。`CalibrationBus` 作为等价标定契约保存在数据字典中；全部 39 个 Bus 元素都在接口目录中记录类型、单位、范围和采样时间。`FaultResetRequest` 取代顶层 `FaultResetAck` 标量端口。为保持本轮只完成接口契约而不暗改运行语义，`StartRequest/StopRequest/EmergencyStop/Direction/TorqueReferenceNm` 暂作为 ARC-003 的接口占位，当前启动仍沿用速度阈值判定。重构脚本每次先恢复确定性的标量内部实现，再应用 Bus 包装，两个模型的悬空线检查均为 0。
+
+### 数据字典与接口契约
+
+`PMSM_FOC_Data.sldd` 是控制器设计数据的唯一来源。31 个参数分别标识为编译期常量或可标定参数；运行时信号和只读诊断量由 Bus 接口目录管理。每个参数记录名称、目标类型、单位、上下限、默认值、所有者、版本和说明。参数集版本为 `2.1.0`，兼容性标识为 `PMSM_FOC_DUALPLANT_V21`，CRC 字段当前为后续标定导出流水线的明确占位符。两个模型工作区中迁移参数的影子变量数量经自动检查为 0，Harness 专用测试激励仍保留在 Harness 工作区。
+
+| 契约 | 关键元素 | 更新周期/用途 |
+| --- | --- | --- |
+| `ControlCommandBus` | Start/Stop/EmergencyStop、Direction、Speed/Torque Reference、FaultResetRequest | 外部命令；当前仅速度给定和故障复位已接入既有语义 |
+| `MeasurementBus` | Ia/Ib/Ic、Vdc、电角度、机械速度、Valid、Timestamp、Freshness | 100 us 测量链与 1 ms 速度反馈 |
+| `ControlStatusBus` | DutyA/B/C、Id/Iq、Vd/Vq、PwmEnable、StateCode、FaultBits/Code、限幅和测量状态 | 100 us 根输出；1 ms 状态经保持边界同步，不增加慢环执行次数 |
+| `CalibrationBus` | 电流偏置、对齐电压/时间、样本数、参数版本和 CRC | 字典中的等价标定结构，不增加顶层零散参数线 |
+
+本轮只冻结接口形状：`CurrentLimitActive` 暂映射快速过流锁存，`VoltageLimitActive` 暂为 `false`；完整电流限幅/电压矢量饱和语义分别由 ARC-003 和 CTL-001/002 实施。调用方不得把这两个占位诊断当作已完成的降额控制。
+
+完整元素、范围、采样时间和 M0～M10 追溯关系见 `doc/PMSM_FOC_v2.1.0_Requirements_Traceability_Matrix.md`。
 
 ### Stateflow 电机运行状态管理
 
@@ -79,9 +102,9 @@ DQ 电压 -> 对齐覆盖 -> 逆 Park -> 逆 Clarke -> SVPWM -> 快速安全门 
 | 3 | CALIB | 启动 100 样本电流偏置均值计算 | `CalibrationDone` 后进入 ALIGN；15 个 1 ms tick 超时进 FAULT | 0 / 0 |
 | 4 | ALIGN | 施加 2 V d 轴电压、零 q 轴和固定角度 | 20 个 1 ms tick 后进入 RUN；撤销启动回 INIT | 0 / 1 |
 | 5 | RUN | 放行速度指令和闭环 SVPWM | 撤销启动回 INIT；故障进 FAULT | 1 / 1 |
-| 6 | FAULT | 关闭 PWM、清零校准和 PI 状态并保持锁存 | 仅 `FaultResetAck && !FaultDetected && !StartCmd` 回 INIT | 0 / 0 |
+| 6 | FAULT | 关闭 PWM、清零校准和 PI 状态并保持锁存 | 仅 `FaultResetRequest && !FaultDetected && !StartCmd` 回 INIT | 0 / 0 |
 
-`Fast_Safety_Gate_100us` 比较 A/B 相电流绝对值与 12 A 阈值，执行同周期 PWM 禁止并锁存快速故障；只有故障源消失且收到 `FaultResetAck` 才清除锁存。`Slow_Safety_Monitor_1ms` 在慢任务监测过速（绝对转速大于 3000 rpm）和母线欠/过压（低于 10 V 或高于 60 V）。快故障经 Rate Transition 送入 `Motor_Supervisor_1ms`，状态机负责进入锁存 FAULT；最终三相门控始终由快速安全门决定。ALIGN/RUN 以外的状态强制三相安全占空比 0.5。闭环模型把测试信号收拢在 Harness 专用日志子系统中，该子系统不进入 ERT 目标。
+`Fast_Safety_Gate_100us` 使用 `PMSM_Protection_MaxCurrent_A` 执行同周期 PWM 禁止并锁存快速故障；只有故障源消失且收到 `FaultResetRequest` 才清除锁存。`Slow_Safety_Monitor_1ms` 使用 `PMSM_Protection_MaxSpeed_Rpm`、`PMSM_Protection_MinDcBus_V` 和 `PMSM_Protection_MaxDcBus_V` 监测慢故障。快故障经 Rate Transition 送入 `Motor_Supervisor_1ms`，状态机负责进入锁存 FAULT；最终三相门控始终由快速安全门决定。ALIGN/RUN 以外的状态使用 `PMSM_SafeDuty`。闭环模型把测试信号收拢在 Harness 专用日志子系统中，该子系统不进入 ERT 目标。
 
 两个电机对象的公共接口为：
 
@@ -147,11 +170,11 @@ MathWorks 分支将 α/β 电压转换为三相电压后送入官方 `mcbhdlplan
 
 Stateflow 正常启动测试依次访问 `[1 2 3 4 5]`，0.06 s 完成 100 样本电流校准，0.08 s 进入 RUN；注入的 A/B 相偏置 `+0.75/-0.50 A` 被准确估计，校准完成时校正电流均为 0 A。ALIGN 期间实际施加 `Vd=2 V`、`Vq=0 V` 且 PWM 有效。70 V 母线过压由 1 ms 慢保护在 0.001 s 进入 FAULT。另在 RUN 中 0.0903 s 注入 20 A、持续 0.2 ms 的过流脉冲，快速故障和 PWM 禁止均在 0.0903 s 生效，测得关断延迟 0 us；两类故障最终 Duty A 均为 0.5。
 
-故障矩阵分别从 INIT、READY、CALIB、ALIGN 和 RUN 注入短故障脉冲；在故障源清除且没有确认时，五个场景均保持 FAULT。独立确认测试在 0.004 s 清除故障源，状态持续锁存至 0.008 s 的 `FaultResetAck` 脉冲才退出，最终进入 READY。上述测试均 PASS。
+故障矩阵分别从 INIT、READY、CALIB、ALIGN 和 RUN 注入短故障脉冲；在故障源清除且没有确认时，五个场景均保持 FAULT。独立确认测试在 0.004 s 清除故障源，状态持续锁存至 0.008 s 的 `FaultResetRequest` 脉冲才退出，最终进入 READY。上述测试均 PASS。
 
 ![Stateflow 正常与故障测试](PMSM_FOC_DualPlant_v21_stateflow_results.png)
 
-结构与代码检查同时确认：Variant 分支数为 2，官方块引用为 `mcbhdlplantlib/PMSM HDL`；13 个独立控制组件、6 个运行状态、显式任务边界和故障确认端口均存在；控制器为 7 输入/8 输出，两个模型悬空线数均为 0。ERT 代码包含 100 us 基础步长和每 10 步执行一次的 1 ms 子任务、Stateflow、快/慢保护及 `initialize/step` 接口；共享角度组件使生成代码只有 1 次 `sinf` 和 1 次 `cosf` 调用，未检测到 S-Function 文本。
+结构与代码检查同时确认：Variant 分支数为 2，官方块引用为 `mcbhdlplantlib/PMSM HDL`；13 个独立控制组件、6 个运行状态和显式任务边界均存在；控制器为 2 个 Bus 输入/1 个 Bus 输出，31 个数据参数、39 个接口元素、4 类 Bus 均通过检查，两个模型悬空线数均为 0。ERT 代码生成独立的 `ControlCommandBus.h`、`MeasurementBus.h` 和 `ControlStatusBus.h`，包含 100 us 基础步长和每 10 步执行一次的 1 ms 子任务、Stateflow、快/慢保护及 `initialize/step` 接口；共享角度组件使生成代码只有 1 次 `sinf` 和 1 次 `cosf` 调用，未检测到 S-Function 文本。
 
 ## 切换电机对象
 
@@ -170,6 +193,23 @@ Stateflow 正常启动测试依次访问 `[1 2 3 4 5]`，0.06 s 完成 100 样�
 build_pmsm_foc_dualplant_v21
 ```
 
-脚本会依次验证两个被控对象、正常启动、数值校准、对齐输出、1 ms 过压、100 us 快速过流、五状态故障锁存矩阵和确认复位，刷新文档 PNG，核对 13 个控制组件、7 输入/8 输出接口、6 个 Stateflow 状态、显式任务边界和接口连线，重建控制器 ERT C 代码并更新 `verification_report.txt`。生成 C 代码的目标仅为控制器模型；两个 PMSM 被控对象和 Harness 测试日志不进入控制器目标代码。
+脚本会依次验证两个被控对象、正常启动、数值校准、对齐输出、1 ms 过压、100 us 快速过流、五状态故障锁存矩阵和确认复位，刷新文档 PNG，核对 13 个控制组件、`2BI-1BO` 根接口、31 个参数、39 个 Bus 元素、6 个 Stateflow 状态、显式任务边界和接口连线，重建控制器 ERT C 代码并更新 `verification_report.txt`。生成 C 代码的目标仅为控制器模型；两个 PMSM 被控对象和 Harness 测试日志不进入控制器目标代码。
 
-所需产品包括 Simulink、Motor Control Blockset、Simulink Coder 和 Embedded Coder。
+完全清理重建和无人值守运行可使用：
+
+```matlab
+build_pmsm_foc_dualplant_v21( ...
+    'CleanBuild', true, 'BatchMode', true, 'ExportImages', false)
+```
+
+`CleanBuild=true` 会从只读基线目录 `PMSM_FOC_Native_v2.0.0` 覆盖两个 v2.1.0 模型，再确定性地应用组件化、双速率和 Stateflow 重构。重复构建或 CI 可用 `ExportImages=false` 降低峰值内存；功能曲线、全部测试、结构检查和代码生成仍会执行。常规交互构建默认导出架构 PNG。
+
+冻结/复核基线时运行：
+
+```matlab
+verify_pmsm_foc_reproducibility_v21
+```
+
+该命令要求两次 clean build 均通过，并比较控制器/Harness 语义 checksum、`2BI-1BO-13C-6S` 接口签名、模型配置和关键数值指标。2026-08-31 本机 R2024a 双轮结果均为 PASS：控制器 checksum 为 `F3830E96A301CAE4DD5FADBB6B09AFD8`，Harness checksum 为 `5D7F7808CAEFDB7F3253245556780ACB`，Native/MCB 指标最大差值均为 0；完整证据记录在 `baseline_reproducibility_report.txt`。正式发布仍应在已提交、Git clean 的第二台同配置开发机复跑一次。
+
+已验证环境为 Windows 11 x64、MATLAB R2024a（24.1）；所需产品为 Simulink、Stateflow、Motor Control Blockset、Simulink Coder 和 Embedded Coder，均为 24.1。完整环境、许可状态、求解器及代码生成配置见 `verification_report.txt`。

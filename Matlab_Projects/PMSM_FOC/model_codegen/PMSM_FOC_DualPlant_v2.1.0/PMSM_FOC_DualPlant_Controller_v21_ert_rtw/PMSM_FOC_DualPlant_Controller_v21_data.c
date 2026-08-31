@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'PMSM_FOC_DualPlant_Controller_v21'.
  *
- * Model version                  : 1.42
+ * Model version                  : 1.6
  * Simulink Coder version         : 24.1 (R2024a) 19-Nov-2023
- * C/C++ source code generated on : Sat Aug 29 03:10:30 2026
+ * C/C++ source code generated on : Mon Aug 31 04:08:31 2026
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: Intel->x86-64 (Windows64)
@@ -17,6 +17,18 @@
 
 /* Block parameters (default storage) */
 P_PMSM_FOC_DualPlant_Controll_T PMSM_FOC_DualPlant_Controller_P = {
+  /* Variable: FOC_Native_CurrentPeriod
+   * Referenced by:
+   *   '<S6>/KiTs'
+   *   '<S13>/KiTs'
+   */
+  0.0001F,
+
+  /* Variable: FOC_Native_SpeedPeriod
+   * Referenced by: '<S16>/KiTs'
+   */
+  0.001F,
+
   /* Variable: NATIVE_INV_SQRT3
    * Referenced by: '<S2>/InvSqrt3'
    */
@@ -36,25 +48,20 @@ P_PMSM_FOC_DualPlant_Controll_T PMSM_FOC_DualPlant_Controller_P = {
    */
   0.866025388F,
 
-  /* Expression: single(1.0)
-   * Referenced by: '<S1>/Align_Cos_One'
+  /* Variable: PMSM_Alignment_Cos
+   * Referenced by: '<S1>/Align_Cos'
    */
   1.0F,
 
-  /* Expression: single(0.0)
-   * Referenced by: '<S1>/Align_Sin_Zero'
+  /* Variable: PMSM_Alignment_Sin
+   * Referenced by: '<S1>/Align_Sin'
    */
   0.0F,
 
-  /* Expression: single(2.0)
-   * Referenced by: '<S1>/Align_Vd_2V'
+  /* Variable: PMSM_SafeDuty
+   * Referenced by: '<Root>/Safe_Duty_50pct'
    */
-  2.0F,
-
-  /* Expression: single(0.0)
-   * Referenced by: '<S1>/Align_Vq_Zero'
-   */
-  0.0F,
+  0.5F,
 
   /* Expression: single(1.0)
    * Referenced by: '<S3>/One'
@@ -80,36 +87,6 @@ P_PMSM_FOC_DualPlant_Controll_T PMSM_FOC_DualPlant_Controller_P = {
    * Referenced by: '<S3>/Count_State'
    */
   0.0F,
-
-  /* Expression: single(100.0)
-   * Referenced by: '<S3>/Sample_Target'
-   */
-  100.0F,
-
-  /* Expression: single(1.0)
-   * Referenced by: '<Root>/Start_Threshold_Rpm'
-   */
-  1.0F,
-
-  /* Expression: single(12.0)
-   * Referenced by: '<S8>/Max_Current_A'
-   */
-  12.0F,
-
-  /* Expression: single(3000.0)
-   * Referenced by: '<S15>/Max_Speed_Rpm'
-   */
-  3000.0F,
-
-  /* Expression: single(10.0)
-   * Referenced by: '<S15>/Min_Vdc'
-   */
-  10.0F,
-
-  /* Expression: single(60.0)
-   * Referenced by: '<S15>/Max_Vdc'
-   */
-  60.0F,
 
   /* Expression: single(0.0)
    * Referenced by: '<Root>/Id_Reference_Zero'
@@ -176,11 +153,6 @@ P_PMSM_FOC_DualPlant_Controll_T PMSM_FOC_DualPlant_Controller_P = {
    */
   0.5F,
 
-  /* Expression: single(0.5)
-   * Referenced by: '<Root>/Safe_Duty_50pct'
-   */
-  0.5F,
-
   /* Expression: single(0.0)
    * Referenced by: '<S16>/Integrator_State'
    */
@@ -189,7 +161,22 @@ P_PMSM_FOC_DualPlant_Controll_T PMSM_FOC_DualPlant_Controller_P = {
   /* Expression: false
    * Referenced by: '<S8>/Fault_Latch_State'
    */
-  false
+  false,
+
+  /* Computed Parameter: StatusFault_To_100us_InitialCon
+   * Referenced by: '<Root>/StatusFault_To_100us'
+   */
+  false,
+
+  /* Expression: false
+   * Referenced by: '<Root>/VoltageLimit_Inactive'
+   */
+  false,
+
+  /* Computed Parameter: StatusState_To_100us_InitialCon
+   * Referenced by: '<Root>/StatusState_To_100us'
+   */
+  0U
 };
 
 /*
