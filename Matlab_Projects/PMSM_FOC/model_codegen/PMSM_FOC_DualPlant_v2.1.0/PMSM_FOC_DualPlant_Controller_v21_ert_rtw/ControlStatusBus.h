@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'PMSM_FOC_DualPlant_Controller_v21'.
  *
- * Model version                  : 1.6
+ * Model version                  : 1.13
  * Simulink Coder version         : 24.1 (R2024a) 19-Nov-2023
- * C/C++ source code generated on : Mon Aug 31 04:08:31 2026
+ * C/C++ source code generated on : Mon Aug 31 11:44:54 2026
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: Intel->x86-64 (Windows64)
@@ -19,13 +19,13 @@
 
 /* ControlStatusBus v2.1.0 interface contract */
 typedef struct {
-  /* Ts=100 us; Class=ReadOnlyDiagnostic; Final phase-A duty */
+  /* Ts=100 us; Class=ReadOnlyDiagnostic; Raw SVPWM phase-A duty request; actuator must also honor PwmEnable */
   real32_T DutyA;
 
-  /* Ts=100 us; Class=ReadOnlyDiagnostic; Final phase-B duty */
+  /* Ts=100 us; Class=ReadOnlyDiagnostic; Raw SVPWM phase-B duty request; actuator must also honor PwmEnable */
   real32_T DutyB;
 
-  /* Ts=100 us; Class=ReadOnlyDiagnostic; Final phase-C duty */
+  /* Ts=100 us; Class=ReadOnlyDiagnostic; Raw SVPWM phase-C duty request; actuator must also honor PwmEnable */
   real32_T DutyC;
 
   /* Ts=1 ms; Class=ReadOnlyDiagnostic; Q-axis current reference */
@@ -43,19 +43,19 @@ typedef struct {
   /* Ts=100 us; Class=ReadOnlyDiagnostic; Applied q-axis voltage command */
   real32_T VqCommand;
 
-  /* Ts=100 us; Class=ReadOnlyDiagnostic; Final fast-gate PWM permission */
+  /* Ts=100 us; Class=ReadOnlyDiagnostic; Single final permission: SupervisorPwmRequest AND FastInterlock AND HardwareGate */
   boolean_T PwmEnable;
 
   /* Ts=1 ms; Class=ReadOnlyDiagnostic; Supervisor state code */
   uint8_T MotorStateCode;
 
-  /* Ts=1 ms; Class=ReadOnlyDiagnostic; Fault bitmap; detailed allocation belongs to ARC-004 */
+  /* Ts=100 us; Class=ReadOnlyDiagnostic; Latched fault bitmap: bits 0..6 = EStop, driver, overcurrent, invalid measurement, overspeed, undervoltage, overvoltage */
   uint32_T FaultBits;
 
-  /* Ts=1 ms; Class=ReadOnlyDiagnostic; Primary fault code; detailed allocation belongs to ARC-004 */
+  /* Ts=100 us; Class=ReadOnlyDiagnostic; Primary latched fault code 1..7 in bitmap priority order; zero means no fault */
   uint16_T FaultCode;
 
-  /* Ts=100 us; Class=ReadOnlyDiagnostic; Current protection/limit status */
+  /* Ts=100 us; Class=ReadOnlyDiagnostic; Latched software-overcurrent status (fault bit 2) */
   boolean_T CurrentLimitActive;
 
   /* Ts=100 us; Class=ReadOnlyDiagnostic; Voltage saturation status; detailed detection belongs to CTL-001 */

@@ -76,11 +76,11 @@
 \section{范围与架构依据}
 \sectionline
 
-本手册覆盖 \code{PMSM_FOC_DualPlant_v2.1.0} 模型包，说明组件化 FOC 控制器、Stateflow 电机运行状态管理、统一数据字典、类型化 Bus 接口、双 PMSM Variant 被控对象、调度边界、保护阈值、需求追溯以及自动测试结果。设计依据为项目 \path{doc/PMSM_FOC_Software_Architecture.tex} 中定义的分层控制和电机状态管理原则：数值控制算法由 Simulink 组件负责；Stateflow 负责模式转换和监督 PWM 请求；快速安全门负责最终 PWM 许可与过流锁存。
+本手册覆盖 \code{PMSM_FOC_DualPlant_v2.1.0} 模型包，说明组件化 FOC 控制器、Stateflow 电机运行状态管理、统一数据字典、类型化 Bus 接口、双 PMSM Variant 被控对象、调度边界、保护阈值、需求追溯以及自动测试结果。设计依据为项目 \path{doc/PMSM_FOC_Software_Architecture.tex} 中定义的分层控制和电机状态管理原则：数值控制算法由 Simulink 组件负责；Stateflow 只负责模式转换和监督 PWM 请求；快速保护、故障锁存和最终 PWM 仲裁由三个独立 Simulink 组件负责。
 
 本版本控制器采用 2 个类型化 Bus 输入和 1 个 Bus 输出。输入类型为 \code{ControlCommandBus} 和 \code{MeasurementBus}；输出类型为 \code{ControlStatusBus}。
 
-外部 \code{FaultResetRequest} 映射到 Stateflow 内部 \code{ResetAck}；\code{CalibrationBus} 作为数据字典中的等价标定结构，不增加顶层零散参数线。闭环 Harness 将状态、校准、对齐和故障测试信号统一收拢到 \code{Motor_Stateflow_Test_Logging} 子系统。两个电机对象及该日志子系统仅属于仿真环境，不进入控制器 ERT 目标代码。
+外部启动、停止、急停、驱动器故障、故障复位和硬件门控命令均已接入控制语义。标定 Bus 作为数据字典中的等价标定结构，不增加顶层零散参数线。闭环 Harness 将状态、校准、对齐和故障测试信号统一收拢到测试日志子系统。两个电机对象、平均值对象关断适配器及日志子系统仅属于仿真环境，不进入控制器 ERT 目标代码。
 
 \subsection{主要交付文件}
 
@@ -94,21 +94,23 @@
   \item \path{refactor_pmsm_foc_controller_v21.m}：重建独立 FOC 组件及确定的数据流连接。
   \item \path{build_pmsm_foc_dualplant_v21.m}：完成模型配置、双分支仿真、状态机测试、绘图、结构检查和代码生成。
   \item \path{verify_pmsm_foc_reproducibility_v21.m}：连续执行两次 clean build 并比较语义校验和、配置、接口和数值结果。
+  \item \path{verify_pmsm_foc_command_safety_v21.m}：执行 ARC-003--005 显式命令、故障位码、PWM 仲裁、速率和代码生成专项验证。
   \item \path{verification_report.txt}：最近一次机器可读验收结果。
   \item \path{baseline_reproducibility_report.txt}：两次完整清理重建的一致性证据。
+  \item \path{arc003_arc005_verification_report.txt}：命令、安全和双速率专项机器可读结果。
   \item \path{doc/PMSM_FOC_v2.1.0_Requirements_Traceability_Matrix.md}：M0--M10 的 22 条需求追溯矩阵。
 \end{itemize}
 
 \section{系统总体架构}
 \sectionline
 
-闭环系统由速度/负载工况、1 ms Stateflow 运行监督器、组件化 FOC 控制器、48 V 平均逆变器和可切换 PMSM 被控对象组成。Stateflow 在 ALIGN 状态请求固定对齐电压和 PWM，在 RUN 状态放行闭环速度指令与 SVPWM；$100\,\mu\mathrm{s}$ 快速安全门将该请求与过流锁存结果组合，拥有最终 PWM 许可。其他状态将速度指令置零、三相占空比切换为安全值 0.5。该边界使“模式监督”“快速安全”和“数值控制”彼此独立。
+闭环系统由速度/负载工况、1 ms Stateflow 运行监督器、组件化 FOC 控制器、48 V 平均逆变器和可切换 PMSM 被控对象组成。Stateflow 在 ALIGN/RUN 输出 \code{SupervisorPwmRequest}；$100\,\mu\mathrm{s}$ 快速保护产生原始禁止条件，故障锁存管理器产生 \code{FastInterlock}，唯一最终仲裁器再与 \code{HardwareGate} 合成 \code{FinalPwmEnable}。控制器 Duty 保持为原始 SVPWM 请求，不用 0.5 代替真实关断；仅 Harness 平均值对象适配器在禁用时映射为零线电压。
 
 \begin{center}
 \fcolorbox{blue}{lightblue}{%
 \begin{minipage}{0.91\textwidth}
 \centering\small
-Start/Fault $\rightarrow$ Stateflow Motor Supervisor（1 ms）
+显式 Start/Stop/Reset $\rightarrow$ Command Arbiter / Stateflow（1 ms）
 \\[0.35em]
 $\Downarrow$ ControlEnable / Supervisor PwmRequest
 \\[0.35em]
@@ -116,13 +118,14 @@ $\Downarrow$ ControlEnable / Supervisor PwmRequest
 \\[0.35em]
 $\Downarrow$
 \\[0.35em]
-SVPWM $\rightarrow$ Fast Safety Gate（$100\,\mu\mathrm{s}$）$\rightarrow$ Average Inverter $\rightarrow$ Selectable PMSM Plant
+SVPWM Duty 请求 $\rightarrow$ Final PWM Arbiter（$100\,\mu\mathrm{s}$）$\rightarrow$ Harness Plant Adapter $\rightarrow$ Average Inverter / PMSM
 \\[0.35em]
 $\Uparrow$ Speed / Theta / Ia / Ib / Torque / Id / Iq feedback；Slow Safety（1 ms）
 \end{minipage}}
 \end{center}
 
 \begin{landscape}
+\thispagestyle{empty}
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.98\linewidth]{PMSM_FOC_DualPlant_v21_architecture.png}
@@ -141,27 +144,33 @@ $\Uparrow$ Speed / Theta / Ia / Ib / Torque / Id / Iq feedback；Slow Safety（1
 \section{控制组件与任务边界}
 \sectionline
 
-速度环与电流环未混放。速度 PI 的离散状态每 1 ms 更新；显式 Rate Transition 将 $I_q^*$ 传到 $100\,\mu\mathrm{s}$ 任务；Clarke、共享电角度三角函数、Park、D/Q 电流 PI、解耦、电压合成、逆变换和 SVPWM 位于快速任务。Stateflow 模式监督、过速和母线电压监测改为 1 ms，避免把非必要逻辑堆入快环；只有相电流过流比较、锁存和最终 PWM 门控保留在 $100\,\mu\mathrm{s}$，因此紧急关断仍可在当前基础步长生效。
+速度环与电流环未混放。速度 PI 的离散状态每 1 ms 更新；显式 Rate Transition 将 $I_q^*$ 传到 $100\,\mu\mathrm{s}$ 任务；测量有效性、Clarke/Park、D/Q 电流 PI、解耦、限压/抗饱和、电压合成、逆变换、SVPWM、快速保护、故障锁存和最终 PWM 仲裁位于快速任务。命令优先级、Stateflow、过速/母线监测、诊断和状态发布位于 1 ms 任务。通信、参数维护、日志和非实时统计不进入控制器快环。
 
 \begin{table}[H]
 \centering
-\caption{任务调度与所有权}
+\caption{组件级任务调度、预算与数据合同}
 \label{tab:tasks}
-\begin{tabularx}{0.94\textwidth}{p{0.18\textwidth}p{0.22\textwidth}X}
+\scriptsize
+\begin{tabularx}{0.98\textwidth}{p{0.12\textwidth}p{0.23\textwidth}p{0.13\textwidth}p{0.23\textwidth}X}
 \toprule
-\textbf{周期} & \textbf{任务/组件} & \textbf{责任边界} \\
+\textbf{周期/相位} & \textbf{组件} & \textbf{WCET 预算} & \textbf{输入来源} & \textbf{输出消费者} \\
 \midrule
-$100\,\mu\mathrm{s}$ & 快速安全门 & 相电流过流比较和锁存；把监督请求与快速故障组合成最终 PWM 许可 \\
-$100\,\mu\mathrm{s}$ & 校准与对齐组件 & 100 样本电流偏置均值；ALIGN 时选择 2 V d 轴、0 V q 轴和共享角度正余弦 \\
-$100\,\mu\mathrm{s}$ & 电流 FOC 快速链 & 坐标变换、D/Q 电流调节、解耦、电压合成和 SVPWM \\
-1 ms & Stateflow 监督器 & INIT/READY/CALIB/ALIGN/RUN/FAULT 转换、控制使能、监督 PWM 请求和确认复位 \\
-1 ms & 速度 PI 与慢保护 & 生成有界 $I_q^*$；监测过速及母线欠压/过压 \\
-跨速率 & 显式任务边界 & 快到慢的故障/校准量使用 Rate Transition；慢到快的布尔命令保持最近 1 ms 值；$I_q^*$ 用 Rate Transition \\
+$100\,\mu\mathrm{s}$/0 & 有效性、偏置校准、Clarke/Park/角度 & 14 $\mu$s & ADC/位置反馈、校准许可快照 & 电流 PI、快速保护、诊断 \\
+$100\,\mu\mathrm{s}$/0 & d/q PI、解耦、限压/抗饱和、电压合成 & 24 $\mu$s & Id/Iq、IqRef 原子快照、参数 & 逆变换、状态诊断 \\
+$100\,\mu\mathrm{s}$/0 & 逆变换与 SVPWM & 16 $\mu$s & Vd/Vq、角度、Vdc & 原始 DutyA/B/C 请求 \\
+$100\,\mu\mathrm{s}$/0 & 快速保护、故障锁存、PWM 仲裁 & 16 $\mu$s & 电流/有效性、慢故障快照、监督请求、HardwareGate & PwmEnable、FaultBits/Code、执行器 \\
+\textbf{$100\,\mu\mathrm{s}$ 合计} & \textbf{快任务} & \textbf{70 $\mu$s} & \multicolumn{2}{l}{预留 30 $\mu$s 调度/中断裕量} \\
+1 ms/0 & 命令优先级、速度 PI、Stateflow & 220 $\mu$s & Start/Stop/Reset、速度、锁存故障快照 & IqRef、监督请求、模式控制 \\
+1 ms/0 & 慢保护、诊断和状态发布 & 180 $\mu$s & 转速、Vdc、快任务状态快照 & 慢故障、状态 Bus \\
+\textbf{1 ms 合计} & \textbf{慢任务} & \textbf{400 $\mu$s} & \multicolumn{2}{l}{预留 600 $\mu$s 集成裕量；通信/维护不进入快环} \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
+上述 WCET 为设计分配预算，不是 Windows MIL 或最终 MCU 上的实测执行时间；目标硬件 WCET/PIL 仍属于 M9。所有跨速率量均经过命名 Rate Transition；慢到快的保护布尔量使用“保持数据完整性、关闭最大延迟确定性”的最小延迟配置，以满足 Stop 到最终 PWM 不超过 1 个慢环的合同。硬件门极关断目标为硬件立即生效；模型 \code{HardwareGate} 在当前快周期生效；软件过流/测量无效不超过 1 个快环；状态/启停不超过 1 个慢环。
+
 \begin{landscape}
+\thispagestyle{empty}
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.98\linewidth]{PMSM_FOC_DualPlant_v21_controller_architecture.png}
@@ -267,7 +276,7 @@ $V_{off}=-0.5(V_{max}+V_{min})$；0.02--0.98 \\
 \section{数据字典与 Bus 接口契约}
 \sectionline
 
-\path{PMSM_FOC_Data.sldd} 是控制器设计数据的唯一来源。字典包含 31 个控制、保护、校准和数学参数，以及 39 个接口元素；参数目录逐项记录名称、目标类型、单位、范围、默认值、所有者、版本、数据类别和说明。参数集版本为 \code{2.1.0}，兼容性标识为 \code{PMSM_FOC_DUALPLANT_V21}。CRC 字段明确保留给后续标定导出流水线，不作为当前构建的虚假校验值。自动门禁确认控制器和 Harness 已绑定同一字典，迁移参数在两个模型工作区中的影子数量为 0；Harness 专用故障/偏置激励不迁入设计字典。
+\path{PMSM_FOC_Data.sldd} 是控制器设计数据的唯一来源。字典包含 30 个控制、保护、校准和数学参数，以及 41 个接口元素；旧 \code{PMSM_StartThreshold_Rpm} 已删除。参数目录逐项记录名称、目标类型、单位、范围、默认值、所有者、版本、数据类别和说明。参数集版本为 \code{2.1.0}，兼容性标识为 \code{PMSM_FOC_DUALPLANT_V21}。CRC 字段明确保留给后续标定导出流水线，不作为当前构建的虚假校验值。
 
 \begin{table}[H]
 \centering
@@ -295,9 +304,9 @@ ReadOnlyDiagnostic & Duty、状态码、故障码、限幅状态 & 仅由控制�
 \toprule
 \textbf{Bus} & \textbf{元素} & \textbf{责任边界} \\
 \midrule
-\code{ControlCommandBus} & Start/Stop/EmergencyStop、Direction、Speed/Torque Reference、FaultResetRequest & 外部命令；本版本接入速度给定和复位，完整显式命令优先级由 ARC-003 实施 \\
-\code{MeasurementBus} & Ia/Ib/Ic、Vdc、电角度、机械速度、Valid、Timestamp、Freshness & 采样与位置反馈契约；有效性/新鲜度的安全降级由后续测量任务补齐 \\
-\code{ControlStatusBus} & DutyA/B/C、Id/Iq、Vd/Vq、PwmEnable、StateCode、FaultBits/Code、限幅和测量状态 & 最终控制输出与只读诊断；1 ms 状态通过保持边界同步到 100 $\mu$s 根输出 \\
+\code{ControlCommandBus} & Start/Stop/EmergencyStop、DriverFault、HardwareGate、Direction、Speed/Torque Reference、FaultResetRequest & 显式命令与硬件许可；优先级为故障/急停 $>$ Stop $>$ Start \\
+\code{MeasurementBus} & Ia/Ib/Ic、Vdc、电角度、机械速度、Valid、Timestamp、Freshness & Valid 已进入快速禁止；Timestamp/Freshness 留给 MEAS-001 \\
+\code{ControlStatusBus} & 原始 Duty 请求、Id/Iq、Vd/Vq、最终 PwmEnable、StateCode、FaultBits/Code、限幅和测量状态 & Duty 必须与 PwmEnable 配套使用；状态经 Rate Transition 发布 \\
 \code{CalibrationBus} & 电流偏置、对齐电压/时间、样本数、版本、CRC & 字典中的等价标定结构，避免顶层参数散线 \\
 \bottomrule
 \end{tabularx}
@@ -305,12 +314,14 @@ ReadOnlyDiagnostic & Duty、状态码、故障码、限幅状态 & 仅由控制�
 
 控制器根端口由 7 入/8 出标量改为 \code{2BI-1BO}。生成代码输出 \code{ControlCommandBus.h}、\code{MeasurementBus.h} 和 \code{ControlStatusBus.h}；\code{ExtU/ExtY} 与模型端口使用同名类型。
 
-由于 Duty 必须按 100 $\mu$s 输出，而状态码和慢故障每 1 ms 更新，\code{StatusState_To_100us} 与 \code{StatusFault_To_100us} 仅保持慢任务最近值，不增加 Stateflow 或慢保护的执行频率。本轮只冻结接口形状：\code{CurrentLimitActive} 暂映射快速过流锁存，\code{VoltageLimitActive} 暂为 false。完整限幅/饱和诊断由 ARC-003 和 CTL-001/002 实施，调用方不得把占位量当作已完成的降额控制。
+Duty 和 PwmEnable 按 100 $\mu$s 发布，状态码与 $I_q^*$ 每 1 ms 更新。两个状态发布 Rate Transition 保持慢任务最近原子快照，不增加慢组件执行频率。
+
+\code{FaultBits/FaultCode} 由 100 $\mu$s 故障锁存管理器直接输出；\code{CurrentLimitActive} 对应软件过流锁存位；\code{VoltageLimitActive} 仍为 false，占位语义由 CTL-001/002 后续替换。
 
 \section{Stateflow 电机状态管理}
 \sectionline
 
-\code{Motor_Supervisor_1ms} 是运行模式和监督 PWM 请求的所有者，不直接拥有最终 PWM 许可。顶层 \code{SUPERVISED} 父状态包含 INIT、READY、CALIB、ALIGN 和 RUN，并以一条统一故障迁移进入顶层 FAULT。Chart 另输出 \code{CalibrationEnable/Reset}、\code{AlignmentEnable} 和 \code{ControllerReset}；数值平均、电压选择和最终快速门控仍由独立 Simulink 组件负责。FAULT 不会因物理故障自行消失而退出，必须同时满足外部 \code{FaultResetRequest}（映射为内部 \code{ResetAck}）、故障源消失以及启动命令撤销。
+\code{Motor_Supervisor_1ms} 是运行模式和 \code{SupervisorPwmRequest} 的所有者，不直接拥有最终 PWM 许可。顶层 \code{SUPERVISED} 父状态包含 INIT、READY、CALIB、ALIGN 和 RUN，并以统一故障迁移进入顶层 FAULT。Chart 输入为 \code{StartAccepted}、\code{StopActive}、\code{FaultDetected}、\code{ResetAllowed} 和 \code{CalibrationDone}；数值平均、电压选择、故障锁存和最终仲裁由独立 Simulink 组件负责。
 
 \begin{figure}[H]
   \centering
@@ -331,14 +342,14 @@ ReadOnlyDiagnostic & Duty、状态码、故障码、限幅状态 & 仅由控制�
     \node[draw=blue,dashed,rounded corners=3pt,fit=(init)(ready)(calib)(align)(run),
       inner sep=4mm,label={[font=\scriptsize,blue]above:SUPERVISED}] (super) {};
     \draw[flow] (init) -- node[above]{1 tick} (ready);
-    \draw[flow] (ready) -- node[above]{StartCmd} (calib);
+    \draw[flow] (ready) -- node[above]{StartAccepted} (calib);
     \draw[flow] (calib) -- node[above]{Done} (align);
     \draw[flow] (align) -- node[above]{20 tick} (run);
     \draw[flow] (super.south) -- node[right]{任一故障/校准超时} (fault.north);
     \draw[flow] (fault.west) to[bend left=22]
-      node[left,align=right]{ResetAck\\且故障消失} (init.south);
+      node[left,align=right]{ResetAllowed\\且故障消失} (init.south);
     \node[font=\scriptsize,text=navy,anchor=north east,align=right]
-      at (super.south east) {ALIGN/RUN：$\lnot$StartCmd $\Rightarrow$ INIT};
+      at (super.south east) {CALIB/ALIGN/RUN：StopActive $\Rightarrow$ INIT};
   \end{tikzpicture}
   \caption{1 ms Stateflow 顶层状态、职责和锁存故障路径（LaTeX 重绘）}
   \label{fig:stateflow-architecture}
@@ -354,7 +365,7 @@ ReadOnlyDiagnostic & Duty、状态码、故障码、限幅状态 & 仅由控制�
 \textbf{代码} & \textbf{状态} & \textbf{职责} & \textbf{退出条件} & \textbf{控制/请求} \\
 \midrule
 1 & INIT & 清空校准状态和速度/电流 PI & 1 个 tick 后进入 READY & 控制 0 / 请求 0 \\
-2 & READY & 保持 PI 复位，等待有效启动命令 & \code{StartCmd} 为真后进入 CALIB & 控制 0 / 请求 0 \\
+2 & READY & 保持 PI 复位，等待有效启动命令 & \code{StartAccepted} 且非 Stop 后进入 CALIB & 控制 0 / 请求 0 \\
 3 & CALIB & 使能字典配置样本数的电流偏置平均 & \code{CalibrationDone} 进入 ALIGN；\code{PMSM_Calibration_}\newline\code{TimeoutTicks} 超时进 FAULT & 控制 0 / 请求 0 \\
 4 & ALIGN & 施加字典配置的 d/q 电压和固定角度 & \code{PMSM_Alignment_}\newline\code{DurationTicks} 后进入 RUN；停止回 INIT & 控制 0 / 请求 1 \\
 5 & RUN & 放行速度给定和闭环 SVPWM & 停止回 INIT；任一故障进 FAULT & 控制 1 / 请求 1 \\
@@ -367,7 +378,13 @@ ReadOnlyDiagnostic & Duty、状态码、故障码、限幅状态 & 仅由控制�
 
 \subsection{安全监测与输出门控}
 
-\code{Fast_Safety_Gate_100us} 监测 A/B 相过流，执行同周期最终 PWM 禁止并锁存快速故障；只有故障源消失且收到 \code{FaultResetRequest} 才能清除锁存。\code{Slow_Safety_Monitor_1ms} 监测过速和母线欠/过压，并把结果送入 Stateflow。Stateflow 根据慢保护或跨速率送入的快速故障转换到 FAULT；ALIGN/RUN 以外或最终许可为假的状态均使用 \code{PMSM_SafeDuty}。因此慢速模式管理不会增加快速过流的关断延迟，物理故障源恢复也不会触发自动重启。
+\code{Fast_Protection_100us} 只产生软件过流和测量无效原始条件；\code{Slow_Safety_Monitor_1ms} 保留过速、欠压、过压的独立身份；\code{Fault_Latch_Manager_100us} 是故障位、主码、锁存和复位的唯一所有者。\code{Final_PWM_Arbiter_100us} 是唯一最终关断点：
+
+\begin{center}
+\fcolorbox{navy}{lightblue}{\ttfamily FinalPwmEnable = SupervisorPwmRequest \&\& FastInterlock \&\& HardwareGate}
+\end{center}
+
+任一输入都能独立在 100 $\mu$s 任务中撤销许可。故障位 0--6 依次为 EmergencyStop、DriverFault、软件过流、测量无效、过速、欠压和过压；主码为相应的 1--7，数字较小者优先。复位只有在 Stop 有效、Start 清除、HardwareGate 为真且全部原始故障消失时允许。控制器 Duty 不因关断改为 0.5；Harness 平均值对象内部的 \code{Average_Plant_Enable_Map} 才把禁用映射为三相相等占空比以获得零线电压。
 
 \begin{table}[H]
 \centering
@@ -378,9 +395,12 @@ ReadOnlyDiagnostic & Duty、状态码、故障码、限幅状态 & 仅由控制�
 \toprule
 \textbf{监测项} & \textbf{触发阈值} & \textbf{任务所有者} & \textbf{安全动作} \\
 \midrule
-机械转速 & \code{PMSM_Protection_}\newline\code{MaxSpeed_Rpm}（默认 3000 rpm） & 1 ms 慢保护 & 请求进入 FAULT，输出安全占空比 \\
-A/B 相电流 & \code{PMSM_Protection_}\newline\code{MaxCurrent_A}（默认 12 A） & $100\,\mu\mathrm{s}$ 快速安全门 & 当前快周期关断并锁存；输出安全占空比 \\
-直流母线 & \code{PMSM_Protection_}\newline\code{MinDcBus_V / MaxDcBus_V}（默认 10/60 V） & 1 ms 慢保护 & 请求进入 FAULT，输出安全占空比 \\
+EmergencyStop & 外部布尔电平 & $100\,\mu\mathrm{s}$ 锁存管理器 & 位 0/码 1；当前快周期关断并锁存 \\
+DriverFault & 驱动器布尔故障 & $100\,\mu\mathrm{s}$ 锁存管理器 & 位 1/码 2；当前快周期关断并锁存 \\
+A/B 相电流 & \code{PMSM_Protection_}\newline\code{MaxCurrent_A}（默认 12 A） & $100\,\mu\mathrm{s}$ 快速保护 & 位 2/码 3；不超过 1 个快环 \\
+Measurement.Valid & false & $100\,\mu\mathrm{s}$ 快速保护 & 位 3/码 4；当前快周期关断并锁存 \\
+机械转速 & \code{PMSM_Protection_}\newline\code{MaxSpeed_Rpm}（默认 3000 rpm） & 1 ms 慢保护 & 位 4/码 5；经快照进入锁存管理器 \\
+直流母线 & \code{PMSM_Protection_}\newline\code{MinDcBus_V / MaxDcBus_V}（默认 10/60 V） & 1 ms 慢保护 & 欠压位 5/码 6；过压位 6/码 7 \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -416,13 +436,20 @@ A/B 相电流 & \code{PMSM_Protection_}\newline\code{MaxCurrent_A}（默认 12 A
 \section{自动测试与结果}
 \sectionline
 
-构建脚本依次执行 Native 与 MathWorks 两个 2 s 闭环场景、正常启动、已知偏置校准、ALIGN 电压输出、70 V 母线过压、20 A 快速过流、五个运行状态的故障锁存矩阵、确认复位、组件/连线/速率结构检查以及控制器 ERT 代码生成。所有测试使用 MATLAB/Simulink/Stateflow R2024a。
+构建脚本执行 Native 与 MathWorks 两个 2 s 闭环场景、正常启动、已知偏置校准、ALIGN 电压输出、慢/快速保护、故障锁存、确认复位、组件/连线/速率结构检查以及控制器 ERT 代码生成。专项脚本 \code{verify_pmsm_foc_command_safety_v21} 进一步覆盖无 Start、命令冲突、急停、驱动故障、测量无效、HardwareGate、Stop 延迟、故障位码、复位条件和单点仲裁。所有测试使用 MATLAB/Simulink/Stateflow R2024a。
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.98\textwidth]{PMSM_FOC_DualPlant_v21_stateflow_results.png}
   \caption{Stateflow 启动、校准、对齐、慢速过压、快速过流和确认复位结果}
   \label{fig:stateflow-results}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\textwidth]{arc003_arc005_command_safety_test.png}
+  \caption{ARC-003--005 无启动、过流、驱动故障和 HardwareGate 专项证据}
+  \label{fig:arc003-005-results}
 \end{figure}
 
 \begin{table}[H]
@@ -438,9 +465,14 @@ A/B 相电流 & \code{PMSM_Protection_}\newline\code{MaxCurrent_A}（默认 12 A
 电流偏置校准 & 注入 $+0.75/-0.50$ A；0.06 s 估计为 $+0.75/-0.50$ A；完成时校正电流均为 0 A & \pass \\
 70 V 过压注入 & 访问 [1 6]；1 ms 慢保护在 0.001 s 进入 FAULT；DutyA=0.5 & \pass \\
 20 A 快速过流 & 0.0903 s 注入持续 0.2 ms 的脉冲；同一时间快速故障和 PWM 禁止生效，测得延迟 0 $\mu$s & \pass \\
+非零速度给定但无 Start & 只访问 INIT/READY，最终和全程 PwmEnable 均为 0 & \pass \\
+Start/Stop 冲突与 Stop 延迟 & 同时有效时 Stop 获胜；RUN 中 Stop 到 INIT 为 0.7 ms & \pass \\
+EmergencyStop / DriverFault & PwmEnable 关断延迟均为 0 $\mu$s；位码分别为 1/1、2/2 & \pass \\
+测量无效 & Valid=false 同周期关断；FaultBits/FaultCode=8/4 & \pass \\
+HardwareGate & 独立同周期关断和恢复，FaultBits 保持 0 & \pass \\
 任意状态故障锁存 & 分别从 INIT/READY/CALIB/ALIGN/RUN 注入短脉冲；故障源清除后五项均保持 FAULT & \pass \\
-确认复位 & 0.004 s 清除故障源后仍锁存；0.008 s ResetAck 才退出，最终进入 READY & \pass \\
-状态/速率结构 & 6 状态、13 个控制组件、2 Bus 输入/1 Bus 输出；Chart/慢保护为 1 ms、快保护为 $100\,\mu\mathrm{s}$ & \pass \\
+确认复位 & 只有 Stop、Start 清除、HardwareGate、原始故障全清和 FaultResetRequest 同时满足才退出 & \pass \\
+状态/速率/代码结构 & 6 状态、唯一 PWM 仲裁、17 个 Rate Transition、2BI-1BO；30 参数/41 接口；ERT 检查通过 & \pass \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -474,13 +506,13 @@ Duty A 最大值 & 0.915057063 & 0.915057063 \\
 
 结构及代码检查还确认：
 \begin{itemize}[nosep,leftmargin=2em]
-  \item Variant 分支数为 2，独立控制组件数为 13；
+  \item Variant 分支数为 2，显式命令、FOC、快/慢保护、锁存和仲裁组件均存在；
   \item 控制器接口为 2 个 Bus 输入/1 个 Bus 输出，旧 \code{FaultResetAck} 标量端口不存在；
-  \item 数据字典含 31 个参数和 39 个接口元素，四类 Bus 逐元素检查通过，迁移参数工作区影子数为 0；
+  \item 数据字典含 30 个参数和 41 个接口元素，旧隐式启动参数不存在，四类 Bus 逐元素检查通过；
   \item 速度、Stateflow 和慢保护任务均为 0.001 s；电流与快速安全门任务均为 0.0001 s；
-  \item 显式任务边界、双速率调度器和快/慢安全逻辑均进入生成代码；
+  \item 17 个命名 Rate Transition、双速率调度器和快/慢安全逻辑均通过结构检查；
   \item 控制器与闭环模型悬空线数均为 0；
-  \item 生成代码包含三个 Bus 头文件、\code{initialize/step}、外部输入/输出和 Stateflow 逻辑，共有 1 次 \code{sinf} 与 1 次 \code{cosf} 调用，不包含 S-Function 文本，综合结论为 \pass。
+  \item 生成代码包含三个 Bus 头文件、\code{DriverFault}、\code{HardwareGate}、\code{FaultBits}、最终 \code{PwmEnable} 和 Stateflow 逻辑；旧 StartThreshold 与 S-Function 文本不存在，综合结论为 \pass。
 \end{itemize}
 
 \subsection{BASE-002 需求追溯与架构符合性}
@@ -496,19 +528,19 @@ Duty A 最大值 & 0.915057063 & 0.915057063 \\
 \toprule
 \textbf{状态} & \textbf{数量} & \textbf{代表性范围} \\
 \midrule
-已满足 & 9 & M0 数据字典/Bus、M1 PI、M2 可切换对象、M3 FOC/双速率、M6 状态机/故障、M9 ERT 代码生成 \\
-部分满足 & 6 & M1 对象级阶跃、M2 dq 对象验收、M4 测量有效性、M5 编码器/工况、M9 SIL/PIL/实时集成 \\
+已满足 & 10 & M0 数据字典/Bus、M1 PI、M2 可切换对象、M3 FOC/双速率、M4 聚合有效性、M6 状态机/故障、M9 ERT 代码生成 \\
+部分满足 & 5 & M1 对象级阶跃、M2 dq 对象验收、M5 编码器/工况、M9 SIL/PIL/实时集成 \\
 未满足 & 1 & M4 双电阻窗口、重构、死区和不可测区降级 \\
 明确延期 & 6 & M7 观察器、M8 无传感器切换、M10 低压/目标电压硬件验证 \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-主要偏离包括：显式 Start/Stop/EmergencyStop 字段虽已进入 \code{ControlCommandBus}，但行为接入归 ARC-003，当前启动仍由速度阈值推导；故障位/码已进入状态 Bus，但稳定编号和历史归 ARC-004；\code{MeasurementBus.Valid/FreshnessTicks} 尚未驱动降级；CRC 是受控占位符而非已实现校验。上述缺口在矩阵中均以风险和后续 TODO 明确记录。
+主要剩余偏离包括：Direction/TorqueReference 尚未形成运行模式；故障历史/冻结帧未实现；\code{FreshnessTicks} 尚未形成超时策略；电压矢量限幅诊断、SIL/PIL、真实 MCU WCET 和硬件关断链仍待闭环；CRC 是受控占位符。显式启停、稳定故障位码、聚合 Valid 快速关断和双速率任务合同已由 ARC-003--005 完成。
 
 \subsection{BASE-001 可复现基线}
 
-2026 年 8 月 31 日使用 \code{verify_pmsm_foc_reproducibility_v21} 连续执行两次 clean build。每轮均从 \path{PMSM_FOC_Native_v2.0.0} 源模型覆盖 v2.1.0 模型，然后确定性应用组件、Stateflow、双速率任务、安全逻辑、数据字典和 Bus 接口重构，运行全量 MIL 测试并复核 ERT 代码。重复构建关闭非功能性的架构截图导出以限制 MATLAB 峰值内存；结果曲线、模型/代码、测试和报告仍完整刷新。
+ARC-003--005 之前曾在 2026 年 8 月 31 日使用 \code{verify_pmsm_foc_reproducibility_v21} 连续执行两次 clean build，结果如下表。它证明重建机制有效，但其 checksum 已因本轮显式命令、安全仲裁和速率边界变更而归档；本轮提交后必须重新运行才能形成新的发布基线。
 
 \begin{table}[H]
 \centering
@@ -551,7 +583,7 @@ MCB 指标最大差值 & \multicolumn{2}{l}{0（容差 $1\times10^{-6}$）} \\
 \end{tabularx}
 \end{table}
 
-本机双轮基线结论为 \pass。官方 MCB PMSM HDL 模块会报告约 $10^{-8}$ 量级的 single 参数量化提示，该提示不改变校验结果且不属于门禁失败。构建报告如实记录本任务修改尚未提交，因而 Git 工作区非 clean；正式发布前仍须在已提交且 Git clean 的第二台同配置开发机复跑，并确认两个 checksum、接口和全部门禁一致。
+表 \ref{tab:repro-results} 是 ARC-003--005 变更前的已归档 BASE-001 证据；本轮模型结构和 checksum 必然变化，不能再把旧 checksum 当作当前发布基线。当前命令/安全/速率/ERT 专项门禁已通过；正式发布前仍须在本轮提交后重新执行双轮 clean build，在 Git clean 状态刷新两个 checksum，并在第二台同配置开发机复跑。
 
 \section{重建、切换与维护}
 \sectionline
@@ -562,7 +594,7 @@ MCB 指标最大差值 & \multicolumn{2}{l}{0（容差 $1\times10^{-6}$）} \\
 \fcolorbox{navy}{lightgray}{\parbox{0.82\textwidth}{\ttfamily\centering build\_pmsm\_foc\_dualplant\_v21}}
 \end{center}
 
-脚本会创建/更新数据字典，重建组件和 Stateflow 集成，应用 Bus 根接口，依次仿真两个 Variant，执行校准、对齐、1 ms 慢保护、$100\,\mu\mathrm{s}$ 快速过流、五状态故障锁存和确认复位测试，验证连线、任务周期、参数影子和四类接口契约，生成控制器 ERT C 代码并更新 \path{verification_report.txt}。Stateflow/Bus 集成脚本可重复运行：每次先恢复确定性的标量内部实现，再建立同一结构，因此不会积累红色虚线或重复连线。Harness 的 18 路测试信号集中在一个日志子系统内，不进入 ERT 控制器。
+脚本会创建/更新数据字典，重建组件和 Stateflow 集成，应用 Bus 根接口，依次仿真两个 Variant，执行校准、对齐、慢/快速保护、故障锁存和确认复位测试，验证连线、任务周期、参数影子和四类接口契约，生成控制器 ERT C 代码并更新 \path{verification_report.txt}。ARC-003--005 专项复核使用 \code{verify_pmsm_foc_command_safety_v21}，它更新 \path{arc003_arc005_verification_report.txt} 和测试曲线。集成脚本每次先恢复确定性的标量内部实现，因此不会积累红色虚线或重复连线；Harness 测试日志和平均值对象适配器不进入 ERT 控制器。
 
 完全清理重建使用：
 
@@ -579,6 +611,6 @@ MCB 指标最大差值 & \multicolumn{2}{l}{0（容差 $1\times10^{-6}$）} \\
 \section{结论}
 \sectionline
 
-v2.1.0 已明确职责边界：1 ms Stateflow 管理模式、监督 PWM 请求和确认复位；1 ms 慢保护负责过速及母线电压；$100\,\mu\mathrm{s}$ 快速安全门拥有最终 PWM 许可并锁存过流；独立 Simulink 组件执行数据字典配置的偏置校准与 d 轴对齐；1 ms 速度环生成转矩电流请求；$100\,\mu\mathrm{s}$ 电流环完成 FOC 与 SVPWM。31 个设计参数、39 个接口元素、\code{2BI-1BO} 根接口和 M0--M10 的 22 条追溯需求已纳入手册。双被控对象、数值校准、实际对齐电压、零延迟快速过流关断、任意运行状态故障锁存、确认复位、结构、Bus C 类型和 ERT 代码生成均通过自动验收。显式命令行为、详细故障字典、两电阻采样、观察器和硬件部署仍按追溯矩阵延期，不属于当前完成范围。
+v2.1.0 已明确职责边界：1 ms 命令仲裁和 Stateflow 管理模式与监督请求；1 ms 慢保护负责过速及母线电压；$100\,\mu\mathrm{s}$ 快速保护、故障锁存和唯一仲裁器分别拥有判定、记忆和最终 PWM 权限；独立组件执行偏置校准、对齐和数值 FOC。30 个设计参数、41 个接口元素、\code{2BI-1BO} 根接口和 M0--M10 的 22 条追溯需求已纳入手册。无 Start、Stop 优先级、0.7 ms Stop 状态响应、四类 0 $\mu$s 快速禁止、稳定故障位码、HardwareGate 独立关断/恢复、确认复位、17 个 Rate Transition、Bus C 类型和 ERT 代码生成均通过自动验收。真实硬件立即关断、目标 WCET/SIL/PIL、两电阻采样、观察器和硬件部署仍按追溯矩阵延期。
 
 \end{document}
